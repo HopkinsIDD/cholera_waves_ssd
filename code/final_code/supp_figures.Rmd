@@ -1,0 +1,979 @@
+---
+title: "Supporting Information"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+
+
+### _Successive epidemic waves of cholera in South Sudan, 2014 - 2017_
+
+
+Forrest K Jones^1^, Joseph F Wamala^2^, John Rumunu^3^, Pinyi Nyimol Mawien^3^, Kol Mathew Tut^3^, Shirlee Wohl^1^, Lul Deng^3^, Lorenzo Pezzoli^4^, Linda Haj Omar^5^, Justin Lessler^1^, Marie-Laure Quilici^6^, Francisco J Luquero^7^, Andrew S Azman^1,8^  
+
+
+1 Department of Epidemiology, Johns Hopkins Bloomberg School of Public Health, Baltimore, USA  
+2 World Health Organization, Juba, South Sudan  
+3 South Sudan Ministry of Health, Juba, South Sudan  
+4 World Health Organization, Geneva, Switzerland  
+5 World Health Organization, Brazzaville, Republic of Congo  
+6 Institut Pasteur, Paris, France  
+7 Epicentre, Geneva, Switzerland  
+8 MSF, Geneva, Switzerland  
+
+\pagebreak
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#set working directory
+#knitr::opts_knit$set(root.dir = "..")
+```
+
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+
+### Load libraries and functions
+source("source/utils.R")
+reload_source()
+
+
+```
+
+### Table S1. Laboratory culture confirmation of Vibrio cholerae O1. 
+Number of samples testing positive for cholera culture from the National Public Health Laboratory in Juba. Three samples in 2017 tested had an unknown geographical state; all were negative.
+
+```{r ts1, message=FALSE, echo=FALSE,warning=FALSE,fig.width = 7, fig.asp = 1.5}
+
+path <- "data/lab_linelist/labsamplelinelist_2014_edited.xls"
+
+# 2014
+data2014 <- path %>%
+        excel_sheets() %>%
+        set_names() %>%
+        map_df(~ read_excel(path = path, sheet = .x, col_types= rep("text",26)), .id = "sheet")
+
+
+data2014_final <- data2014 %>% filter(!(is.na(`Lab /No:`))) %>%
+                mutate(state=sheet) %>%
+                filter(state %in% c("CES","EES","Upper Nile", "Jongolei", "WES"))%>%
+                mutate(result= `Vibrio laboratory  culture result:         0: Not done        1: Positive             2: Negative        3: Pending`)%>%
+                filter(result %in% c(1,2)) %>%
+                mutate(result=factor(result,labels=c("Positive","Negative"))) %>%
+                mutate(state=recode(state,
+                                    CES="Central Equatoria",
+                                    EES="Eastern Equatoria",
+                                    Jongolei="Jonglei",
+                                    WES="Western Equatoria")) %>%
+                group_by(result,state) %>%
+                summarize(Tests=n()) %>%
+                spread(result,Tests) %>%
+                mutate(year=2014)
+
+
+SS_2014 <- data2014_final %>% summarize(Positive=sum(Positive),
+                             Negative=sum(Negative)) %>%
+                mutate(state="South Sudan",
+                       year=2014)
+
+
+### 2015 (take from word document)
+data2015_final <- data.frame(
+        state=c("Central Equatoria",
+                "Warrap",
+                "Lakes",
+                "Jonglei",
+                "Eastern Equatoria",
+                "Unity"),
+        Positive=c(39,0,0,4,0,0),
+        Negative=c(65,1,1,13,6,3)
+                ) %>%
+        mutate(year=2015)
+SS_2015 <- data2015_final %>% summarize(Positive=sum(Positive),
+                                        Negative=sum(Negative)) %>%
+        mutate(state="South Sudan",
+               year=2015)
+
+
+### 2017
+
+library(lubridate)
+path2017 <- "data/lab_linelist/Cholera lab specimen tracking sheet 25 Oct 2017_updated_edited.xlsx"
+data2017 <- readxl::read_xlsx(path2017)
+
+data2017_final <- data2017 %>%
+        mutate(year = year(as.Date(`Date of onset`)),
+               year=ifelse(is.na(year),year(as.Date(`Date specimen sent from state hub to Central Level (Juba)`)),
+                           year)) %>%
+        mutate(result=`Isolate 1: positive 2: Negative`)%>%
+        filter(result %in% c(1,2))%>%
+        mutate(result=factor(result,
+                             labels=c("Positive","Negative")))%>%
+        mutate(state=recode(State,
+                            CE="Central Equatoria",
+                            CES="Central Equatoria",
+                            EES="Eastern Equatoria",
+                            `Jonglei State`="Jonglei",
+                            `Lakes state`="Lakes",
+                            `Lakes State`="Lakes",
+                            `Unity State`= "Unity",
+                            `Unty State`="Unity",
+                            `Upper Nile State`="Upper Nile",
+                            UpperNile ="Upper Nile",
+                            `UpperNile State`="Upper Nile",
+                            `Warrap State`="Warrap",
+                            WBG="Western Bahr el Ghazal",
+                            WBGz="Western Bahr el Ghazal"
+                            )) %>%
+        mutate(state=ifelse(is.na(state),"Unknown",state))%>%
+        group_by(result,state,year) %>%
+        summarize(Tests=n()) %>%
+        spread(result,Tests) %>%
+        mutate(Positive=ifelse(is.na(Positive),0,Positive))
+
+SS_2017 <- data2017_final %>%
+        group_by(year) %>%
+        summarize(Positive=sum(Positive),
+                Negative=sum(Negative)) %>%
+        mutate(state="South Sudan")
+
+#come together
+allLabll <- bind_rows(data2014_final,
+                     data2015_final,
+                     data2017_final
+                     ) %>% filter(state!="Unknown")%>%
+                mutate(Total=Positive+Negative,
+                       perPos=round(Positive/Total*100),
+                       final=paste(Positive,
+                                   "/", Total,
+                                   " (",perPos,
+                                   "%)",sep="")) %>%
+                select(year,state,final)%>%
+                spread(year,final)
+allSS <- bind_rows(SS_2014,
+                SS_2015,
+                SS_2017) %>%
+        mutate(Total=Positive+Negative,
+               perPos=round(Positive/Total*100),
+               final=paste(Positive,
+                           "/", Total,
+                           " (",perPos,
+                           "%)",sep="")) %>%
+        select(year,state,final)%>%
+        spread(year,final)
+
+#make final table
+final_labtable <- bind_rows(allLabll,
+                            allSS) %>%
+                rename(State=state)
+final_labtable[is.na(final_labtable)]<-"-"
+
+#library(flextable)
+ft<- flextable(final_labtable)
+ft %>% autofit()
+
+# print(ft, preview = "pptx")
+
+
+
+```
+
+
+\pagebreak
+
+
+### Figure S1: Timing of the first round of vaccination campaigns.
+Each campaign is represented by a dot. The length of the line is the amount of time between either the peak or last case of a county-level outbreak. Ten campaigns occurred in areas without cholera cases. One campaign in Juba 2015 had a missing date and was excluded from this analysis.
+
+```{r fs1, message=FALSE, echo=FALSE,warning=FALSE, fig.width = 10, fig.asp = .62}
+
+
+#bring in map data and population data
+map <- read_sf("data/ssd_admbnda_adm2_200k_ssnbs_20160114.shp")
+mapdf <- as.data.frame(map) %>% select(-geometry)
+worldpop_dat <- read_csv("data/SSD15adjv3_tif+SSD-HDX-Borders_adm2_zonal.csv")
+
+#bring in case data and break it up by week
+master_dat <- read_rds("generated_data/master_linelist_simp.rds")
+masterfinal <- master_dat %>% mutate(year=ifelse(is.na(onset_date),format(visit_date, "%Y"),
+                     format(onset_date, "%Y"))) %>%
+        mutate( week = floor_date(onset_date_imp - 1, "weeks") + 1) %>%
+        group_by(week, admin2Name) %>%
+        summarize(cases=n()) %>%
+        filter(!is.na(week) & !(is.na(admin2Name))) %>%
+        mutate(yr=as.character(year(week)),
+               wave=ifelse(yr=="2016" | yr=="2017","2016/2017",yr))
+
+# calculate the peak week and last case for each wave
+last <- masterfinal %>%
+        group_by(admin2Name,wave) %>%
+        summarize(lastWk=max(week))
+
+peak <- masterfinal %>%
+        group_by(admin2Name,wave) %>%
+        filter(cases==max(cases)) %>%
+        select(admin2Name,wave,week,cases) %>%
+        arrange(week,admin2Name)%>%
+        rename(peakWk=week) %>%
+        group_by(admin2Name,wave) %>%
+        summarize(peakWk=mean(peakWk),
+                   cases=mean(cases))
+
+
+#bring in ocv data
+ocv_dat <- read_xlsx("data/ocv_summary_south_sudan.xlsx",na = c("","?")) %>%
+        rename(admin2Name = County,doses_r1 = `Doses administered 1st round`) %>%
+        mutate(date_r1 = as.Date(`Start\r\n1st round`,origin="1970-1-1"))%>%
+        left_join(worldpop_dat %>% select(admin2Name,SUM)) %>%
+        mutate(r1_coverage = doses_r1/SUM) %>% #calculate coverage
+        #assign waves to each campaign
+        select(No.,admin2Name,date_r1,r1_coverage) %>%
+        filter(!is.na(date_r1)) %>%
+        mutate(yr=as.character(year(date_r1)),
+               wave=ifelse(yr=="2016" | yr=="2017","2016/2017",yr))%>%
+        arrange(date_r1,admin2Name)%>%
+        #match with peak and last case data
+        left_join(peak, c("admin2Name","wave")) %>%
+        left_join(last, c("admin2Name","wave")) %>%
+        mutate(TTL=as.numeric(date_r1-lastWk),
+                TTP=as.numeric(date_r1-peakWk)) %>%
+        #label as juba vs not
+        select(No.,admin2Name,wave,date_r1,TTL,TTP,r1_coverage) %>%
+        mutate(County=ifelse(admin2Name=="Juba",
+                             "Juba",
+                             "Other Counties"))
+
+
+
+p1 <- ocv_dat %>% ggplot(aes(y=date_r1,x=TTP/7,col=County)) +
+        geom_point(shape=1)+
+        geom_segment(aes(xend=0,yend=date_r1))+
+        geom_vline(xintercept=0,lty=2)+
+        theme_cowplot()+
+        xlab("Weeks from peak case")+
+        ylab("Date of first vaccination round")+
+        theme(legend.position=c(0,1))+
+        xlim(c(-70,70))+
+        scale_color_manual(values=c("red", "darkgrey"))
+
+
+p2<- ocv_dat %>% ggplot(aes(y=date_r1,x=TTL/7, col=County)) +
+        geom_point(shape=1#, aes(size=r1_coverage)
+                   )+
+        geom_segment(aes(xend=0,yend=date_r1))+
+        geom_vline(xintercept=0,lty=2)+
+        theme_cowplot()+
+        xlab("Weeks from last case")+
+        ylab("Date of first vaccination round")+
+        theme(legend.position="none")+
+        xlim(c(-70,70))+
+        scale_color_manual(values=c("red", "darkgrey"))
+
+plot_grid(p1,p2,ncol=2, labels=c("A","B"))
+# 
+# 
+# #find the number of cases in each wave
+# # caseperwave <- masterfinal %>% group_by(wave,admin2Name) %>%
+# #                   summarize(cases=sum(cases)) %>%
+# #                   spread(wave,cases) %>%
+# #                   right_join(o2, by="admin2Name") %>%
+# #                   filter(wave %in% c("2014","2015"))
+
+
+
+
+
+
+
+
+
+
+
+
+```
+
+
+\pagebreak
+
+
+### Figure S2. Maximum likelihood tree of publicly available VC whole core genome sequences.
+T10 and T13 lineages, as defined in Weill et al. 2019, are indicated in black; sub-lineage of T10 containing South Sudan isolates (see Fig. 2) indicated in blue; 2014–2017 isolates from South Sudan indicated in orange.
+
+![](phylo_images\globaltree.cladeannot-01.png)
+
+
+\pagebreak
+
+
+### Figure S3. MLVA and antibiotic sensitivity analyses of V. cholerae isolates from South Sudan
+Each row of the heatmaps represents one isolate. The left heatmap shows MLVA data with each column being a single locus. Color represents the number of copies that differ from a reference sequence 10-7-3-7-10-18. The right heatmap shows sensitivity for each sample with each column representing a different antibiotic (sulfonamides, SUL; trimethoprim-sulfamethoxazole, SXT; chloramphenicol, CHL; nitrofurantoin, NIT; erythromycin, ERY; Polymyxin B, PMB; colistin, CST; tetracycline, TET; nalidixic acid, NAL; norflaxacin, NOR; vibriostatic agent, O129; streptomycin, STR). Based on Comité de l'Antibiogramme de la Société Française de Microbiologie 2013 standards for Enterobacteriaceae, nearly all samples were resistant to colistin, nitrofurantoin, polymyxin B, streptomycin, sulfonamides, trimethoprim-sulfamethoxazole and vibriostatic agent O/129 (associated with resistance to trimethoprim) and showed decreased susceptibility to chloramphenicol (Figure S3B); MICs determination with Etest (AB bioMérieux, Solna, Sweden) confirmed resistance of all strains to nalidixic acid as confirmed by detection of one mutation in the gyrA gene (substitution of serine by isoleucine at position 83). Resistance to streptomycin (strAB), sulfonamides (sul2), trimethoprim and O139 vibriostatic agent (dfrA1), and trimethoprim-sulfamethoxazole (sul2 and dfrA1), were reported to be associated with an integrating conjugative  element called ICEVchInd5.
+
+
+```{r fs3, message=FALSE, echo=FALSE,warning=FALSE, fig.width = 10, fig.asp = .62}
+
+#load dataset
+mlva_resistance <- read_csv("data/mlva_resistance_mlq.csv") %>%
+  rename(sampleID = `N?CNRVC`)
+
+#MLVA dataframe
+mlva_ssd <- mlva_resistance %>%
+  filter(Country == "South Sudan") %>%
+  rename(year = `Isolation Year`) %>%
+  select(sampleID, year,
+         MLVA_VC0147,
+         MLVA_VC0437,
+         MLVA_VC1457,
+         MLVA_VC1650,
+         MLVA_VCA0171,
+         MLVA_VCA0283) %>%
+  #reference id
+  mutate(
+    MLVA_VC0147 = MLVA_VC0147 -10 ,
+    MLVA_VC0437 = MLVA_VC0437 - 7,
+    MLVA_VC1457 = MLVA_VC1457 - 3,
+    MLVA_VC1650 = MLVA_VC1650 - 7,
+    MLVA_VCA0171 = MLVA_VCA0171 - 10,
+    MLVA_VCA0283 = MLVA_VCA0283 - 18
+  ) %>%
+  rename(
+    VC0147 = MLVA_VC0147 ,
+    VC0437 = MLVA_VC0437,
+    VC1457 = MLVA_VC1457 ,
+    VC1650 = MLVA_VC1650,
+    VCA0171 = MLVA_VCA0171,
+    VCA0283 = MLVA_VCA0283
+  ) %>%
+  gather(site, distance, -c(sampleID,year)) %>%
+  mutate(sampleID = factor(sampleID),
+         distance = factor(distance))
+
+p1 <- mlva_ssd %>%  ggplot() +
+  geom_tile(aes(x=site,y=sampleID,fill=distance)) +
+  scale_fill_manual(name= "Difference \n in copies",
+                    values = c("#e41a1c",
+                               "#377eb8",
+                               "#4daf4a",
+                               "#984ea3",
+                               "#ff7f00"))+
+  facet_grid(year~.,scales = "free",space="free" )+
+  theme_cowplot()+
+  theme(axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.text.x = element_text(angle = 30, hjust = 1)
+        ) +
+  xlab("MLVA Site") + ylab("Sample ID")
+
+#resistance dataframe
+resistance <- mlva_resistance %>% select(sampleID, Antibioresistance, `Isolation Year`, Country, Town)%>%
+  mutate(Antibioresistance =
+           paste(str_replace_all(Antibioresistance, " ", ""),",",sep="")
+  ) %>%   rename(year = `Isolation Year`) %>%
+  mutate(
+    #sulfonamides
+    SUL = str_extract(Antibioresistance,"\\(SSS\\)|SSS"),
+    # trimethoprim-sulfamethoxazole
+    SXT = str_extract(Antibioresistance,"\\(SXT\\)|SXT"),
+    #chloramphenicol
+    CHL = str_extract(Antibioresistance,"\\(C\\),|C,"),
+    #nitrofurantoin
+    NIT = str_extract(Antibioresistance,"\\(FT+\\)|FT"),
+    #erythromycin
+    ERY = str_extract(Antibioresistance,"\\(Em\\)|Em"),
+    #Polymyxin B
+    PMB = str_extract(Antibioresistance,"\\(PB\\)|PB"),
+    #colistin
+    CST = str_extract(Antibioresistance,"\\(CS\\)|CS"),
+    #tetracycline
+    TET= str_extract(Antibioresistance,"\\(TE\\)|TE"),
+    #nalidixic acid
+    NAL = str_extract(Antibioresistance,"\\(NA+\\)|NA"),
+    #norflaxacin
+    NOR = str_extract(Antibioresistance,"\\(NO\\)|NO"),
+    #vibriostatic agent
+    O129 = str_extract(Antibioresistance,"\\(O129\\)|O129"),
+    #streptomycin
+    STR = str_extract(Antibioresistance,",\\(S\\),|,S,|\\(ST\\)|ST")
+
+    # https://aac.asm.org/content/abbreviations-and-conventions
+
+  )
+
+
+# determines if parentheses exist in resistance
+# parentheses indicate intermediate resistance
+resFunc <- function(vec) {
+  out <- NULL
+  for (i in vec){
+    if(is.na(i)){
+
+      out <- c(out,NA)
+
+    }else{
+      out <- c(out,grepl(")",i))
+
+    }
+
+  }
+
+  return(out)
+
+
+
+
+}
+
+
+
+resistance_SSD <- filter(resistance, Country =="South Sudan") %>%
+  select(sampleID,year,
+         SUL,SXT,CHL,NIT,ERY, PMB,CST,TET,NAL,
+         NOR,O129,STR) %>%
+  gather(Antibiotic,Result,-c(sampleID,year))%>%
+  #apparent all were resistant to NAL
+  mutate(
+    Result=ifelse(Antibiotic=="NAL","Resistant",Result)
+  ) %>%
+  mutate(sampleID = factor(sampleID),
+        Result=ifelse(resFunc(Result),2,3),
+        Result=ifelse(is.na(Result),1,Result),
+        Result=factor(Result,labels=c("Sensitive","Intermediate","Resistant")))
+
+
+p2 <- resistance_SSD  %>% ggplot() +
+  geom_tile(aes(x=Antibiotic,y=sampleID,fill=Result)) +
+  facet_grid(year~.,scales = "free",space="free" )+
+  theme_cowplot()+
+  theme(axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1)
+        ) +
+  scale_fill_brewer(palette=1)+
+  ylab("Sample ID")
+
+plot_grid(p1,p2, align = "h", labels = c("A","B"))
+
+# resistance_SSD %>% filter(Antibiotic %in% c("CHL","O129","NAL")) %>%
+#                             group_by(Antibiotic,year) %>%
+#                             summarize(sens=sum(Result=="Sensitive")/n(),
+#                                       int=sum(Result=="Intermediate")/n(),
+#                                       res=sum(Result=="Resistant")/n())
+
+
+```
+
+
+\pagebreak
+
+### Figure S4. Temporal association between the start of county-level outbreaks and rainy season, South Sudan, 2014 - 2017
+Each point represents a county-level outbreak during a specific year. Color indicates if the outbreak occurred in Juba County (red) or in another county (blue). Solid line represents y=x while the dashed lines are offset by 5 weeks.
+
+```{r fs4, message=FALSE, echo=FALSE,warning=FALSE,fig.width = 10, fig.asp = .62}
+
+# Rainfall
+master_dat <- read_rds("generated_data/master_linelist_simp.rds") %>%
+        mutate(year=as.character(year(onset_date_imp)))%>%
+        group_by(admin2Name, year) %>%
+        summarize(firstcase=min(onset_date_imp))
+
+mapdf <- as.data.frame(read_sf("data/ssd_admbnda_adm2_200k_ssnbs_20160114.shp")) %>%
+        select(admin2Name,admin2Pcod)
+chrps_rainfall_2010_2018 <- read_csv("data/ssd_chrps_county/chrps_counties_dailyrainfall_2010_2018.csv")
+
+rainfall_weekly <- chrps_rainfall_2010_2018 %>%
+  mutate(Date = as.Date(dates,format="%m/%d/%Y",origin="1970-1-1"),
+         week = floor_date(Date - 1, "weeks") + 1) %>%
+          group_by(week,admin2Pcod) %>%
+          summarize(precip = sum(avgDailyRainfall)) %>%
+          left_join(mapdf, by="admin2Pcod")
+
+p1 <- ggplot() + geom_line(data=rainfall_weekly,
+                     aes(x=week,y=precip,group=admin2Name),
+                     col="lightblue",alpha=0.3)+
+            geom_line(data=filter(rainfall_weekly,admin2Name=="Juba"),
+                      aes(x=week,y=precip),col="red")+
+            theme_cowplot() + xlab("Week") +ylab("Rainfall (mm/week)")
+
+
+start_rainy <- chrps_rainfall_2010_2018 %>%
+        rename(precip = avgDailyRainfall,
+               Date = dates) %>%
+        mutate(Date = as.Date(Date,format="%m/%d/%Y",origin="1970-1-1"),
+               year = as.character(year(Date))) %>%
+        filter(year %in% as.character(2014:2017)) %>%
+        group_by(admin2Pcod,year) %>%
+        mutate(cs = cumsum(precip))%>%
+        group_by(year,admin2Pcod) %>%
+        #filter(cs>=max(cs)*.1)%>%
+        filter(cs>=100)%>%
+        summarize(start_rainy=min(Date),
+                  cs=min(cs))
+
+p2 <- master_dat %>% filter(!is.na(firstcase)) %>%
+        left_join(mapdf,by="admin2Name")%>%
+        left_join(start_rainy,by=c("admin2Pcod","year")) %>%
+        mutate(diff=(firstcase-start_rainy)/7) %>%
+        ggplot()+geom_point(aes(x=firstcase,y=start_rainy,
+                                col=(admin2Name=="Juba")#,
+                                #shape=year
+                                )) +
+        geom_abline(intercept = c(0,-5*7,5*7),lty=c(1,2,2)) +
+        ylab("Date of 100mm of annual cumulative rainfall") +
+        xlab("Date of first suspected cases") +
+        scale_color_manual(name="Juba",values=c("lightblue","red"))+
+        theme_cowplot() +
+        theme(legend.position = "none")
+
+
+plot_grid(p1,p2,ncol = 1 ,rel_heights = c(2,3))
+
+
+```
+
+
+\pagebreak
+
+### Equation S1. Distributed lag non-linear model equations
+
+Our approach follows the statistical methods outlined in an analysis of cholera surveillance data from Yemen [1]. We assume that the number of cases reported in Juba, $I(t)$ , on a given day, $t$, follows a Poisson process
+$$ I(t) \sim Poisson(R(t)\sum^{10}_{s=0}I(t-s)w(s))$$
+where $R(t)$ is the instantaneous reproductive number and $w(s)$ is the probability mass function of the serial interval, assuming a shifted (by one day) gamma distributed serial interval with a mean of 3.7 days, a standard deviation of 1.5 days, and a maximum of 10 days [2].
+
+To investigate whether rainfall may have modulated cholera transmission, we accounted for population-level immunity, by estimating the instantaneous basic reproductive number, $R_0(t)$. Specifically, we estimated the proportion of the population that is susceptible, $S(t)$, as follows:
+
+$$R(t)=R_0(t)\frac{S(t)}{N}$$
+$$S(t)=N-\sum^{t-1}_{j=1}I(j)/p$$
+where $p$ is the detection probability, assumed to be 10% [3]. Using this set up, we can write out a quasi-poisson regression model equation: 
+
+$$log(E[I(t)])=log(R_0(t))+log(\sum^{10}_{s=1}I(t-s)w(s))+log(N-\sum^{t-1}_{j=1}I(j)/p)$$
+By analyzing the serial interval and susceptibility terms as offset terms, we regressed the instantaneous basic reproductive number on covariates of interest. 
+
+$$log(R_0(t))=\beta_0+
+\sum^6_{d=1}\beta_{dow,d}\delta_d(t)+
+\sum^{3}_{k=1}\beta_{wave,k}\delta_k(t)+
+s(x(t-1),...,x(t-10))$$
+
+$\beta_0+\sum^6_{d=1}\beta_{dow,d}\delta_d(t)$ Specifically, we controlled for the day of the week for potential reporting biases through the week.
+
+$\sum^{3}_{k=1}\beta_{wave,k}\delta_k(t)$ We also included a random effect for the wave (Wave 1: 2014, Wave 2: 2015 or Wave 3: 2016/2017) of the epidemic.
+
+Lastly, we included a cross-basis function, $s$, to examine the lagged effects of rainfall using a distributed lag non-linear model (DLNM)
+
+$$s(x(t-1),...,x(t-10))=\sum^{10}_{l=1}f \cdot \omega(x(t-l),l)$$
+where $x(t)$ represents the accumulated rainfall over the previous 7 days (AR7D). A maximum lag of 10 days was used, meaning that the AR7D on the previous 10 days was used in the analysis of the instantaneous basic reproductive number on a specific day t. The cross-basis is a sum of bi-dimensional dose-lag-response functions, $f \cdot \omega(x,l)$ each composed of two marginal functions; $f(x)$, the standard rainfall response and $\omega(l)$, the additional lag response function. The marginal functions were both modeled using penalized splines, each with five degrees of freedom. Lastly, we calculated the overall rainfall-response association by summing the risk during the 10-day lag period and centering it to a reference value (AR7D = 0). We fit a generalized additive mixed model (GAMM) using quasi-poisson regression.
+
+\pagebreak
+
+### Figure S5. Serial interval and instantaneous basic reproductive number estimates
+
+Results from bayesian analysis to jointly estimate the serial interval and reproductive are illustrated. Discretized serial intervals used in the analysis are shown and have been normalized to been limited to be over a 10 day period. Estimates of the instantaneous basic reproductive number (estimated using the serial interval from the 2015 cases data) are shown over time.
+
+```{r fs5, message=FALSE, echo=FALSE,warning=FALSE, fig.width = 10, fig.height= 10}
+
+#see explore GT for original file
+pdata <- read_csv("generated_data/pdata.csv")
+discreteDF<- read_csv("generated_data/discreteDF.csv")
+
+p0 <- pdata%>% mutate(year=factor(year)) %>%
+        ggplot(aes(x=R0,y=meanSI,col=year))+
+        geom_point(alpha=0.5)+
+        ylab("Mean Serial Interval (Days)")+
+        xlab("Reproductive Number")+
+        scale_color_manual("Year",
+                           values=c("lightblue","#7fc97f","#beaed4"))+
+        theme_bw()
+  
+  
+p1<-discreteDF %>% filter(days>0) %>%
+    ggplot()+ 
+    geom_col(aes(x=days,y=value,fill=Estimate),
+             position = "dodge") +
+    scale_fill_brewer(type="qual")+
+    theme_bw()+ ylab("Density") + xlab("Serial Interval (days)")+
+    scale_x_continuous(limits=c(0,10),breaks=0:10)+
+    ylim(c(0,1))
+
+source("source/dlnm_FINAL.R")
+
+final2015 <- CalcRt(Ser2015)
+final2016 <- CalcRt(Ser2016)
+finalPhelps <- CalcRt(SerPhelps)
+
+
+
+p2<- final2015 %>% ggplot(aes(x=Date))+
+              geom_point(aes(y=cases/off),alpha=0.1)+
+              # geom_smooth(aes(y=cases/off),method="loess",span = 0.1,
+              #             se=FALSE)+
+              geom_rug(aes(col=ag7precip))+
+              scale_y_continuous("R0(t)",trans="sqrt",breaks = c(1,10,100))+
+              geom_hline(yintercept = 1,lty=2)+
+              scale_color_distiller("AR7D",direction = 1)+
+              theme_bw()
+
+plot_grid(plot_grid(p0,p1,nrow=1),p2,ncol=1)
+
+
+
+
+#define crossbasis
+basis.rain <- crossbasis(final2015$ag7precip, scale=FALSE,lag=10,
+                                    argvar=list(fun="ps",df=5),
+                                    arglag=list(fun="ps",df=5))
+
+
+runDLNM <- function(final){
+  
+
+      #run model    
+      DLNMmodel <- gamm(data =final,
+                  cases~ basis.rain +
+                          factor(dow) +
+                          offset(log_off),
+                       family=quasipoisson(link="log"),
+                       random=list(wave=~1)
+                  )
+      #get predictions
+      pred <- crosspred(basis.rain,DLNMmodel$gam, by=0.5, bylag=0.5, cen=0, cum = TRUE)
+      
+      #put results in data.frame
+      modelresults <- data.frame(maxLag=10,
+                      aggregatelevel=7,
+                      ARXD=seq(0,max(final$ag7precip,na.rm= TRUE),by=0.5),
+                      fit = pred$allfit,
+                      se = pred$allse,
+                      upper = pred$allhigh,
+                      lower = pred$alllow
+      )
+  
+  
+      return(modelresults)
+  
+}
+```
+
+
+\pagebreak
+
+
+### Figure S6. Analysis of rainfall and cholera transmission using a distributed lag non-linear model
+
+Histogram indicates the number of days with AR7D during which there was cholera was reported. Solid lines are the mean estimate of the relative instantaneous basic reproductive number while  shading is the 95% confidence interval. 
+
+
+```{r, message=FALSE, echo=FALSE,warning=FALSE,fig.width = 10,fig.height=7}
+modelresults2015<-final2015 %>% runDLNM() %>%
+              mutate(`Serial Interval Estimate`="2015")
+modelresults2016<-final2016 %>% runDLNM()%>%
+              mutate(`Serial Interval Estimate`="2016")
+modelresultsPhelps<-finalPhelps %>% runDLNM() %>%
+              mutate(`Serial Interval Estimate`="Phelps")
+
+modelresults <- bind_rows(modelresults2015,modelresults2016,modelresultsPhelps)
+
+
+
+#rainfall histogram
+p3<- final2015 %>% filter(!(is.na(cases)))%>%
+        rename(AR4D=ag4precip,
+               AR7D=ag7precip,
+               AR10D=ag10precip)%>%
+        select(Date,AR4D,AR7D,AR10D)%>%
+        gather(aggregatelevel,mm,-Date)%>%
+        mutate(aggregatelevel=factor(aggregatelevel,
+                                     levels=c("AR4D","AR7D","AR10D"))) %>%
+        filter(aggregatelevel=="AR7D")%>%
+        ggplot(aes(x=mm))+
+        geom_histogram(bins=40)+
+        ylab("Number of days \n with cholera reported") +
+        xlab("Accumulated rainfall \n over past 7 days (mm)")+
+        coord_cartesian(xlim = c(0,85),
+                        expand = FALSE)+
+        theme_cowplot()
+
+
+
+
+
+
+# model results
+p4 <- modelresults%>% ggplot(aes(x=ARXD))+
+        geom_line(aes(y=exp(fit),col=`Serial Interval Estimate`))+
+        geom_ribbon(aes(ymin=exp(lower),ymax=exp(upper),
+                        fill=`Serial Interval Estimate`),
+                    #lty=2, fill=NA,
+                    alpha=0.1)+
+        geom_hline(yintercept = 1,lty=2)+
+        ylab("Relative R0(t) over \n the next 10 days")+
+        theme_cowplot() +
+        scale_y_continuous(trans="log10",
+                           breaks = c(1,1000,1000000),
+                           labels = c(1,1000,1000000))+
+        scale_color_brewer(type="qual")+
+        scale_fill_brewer(type="qual")+
+        coord_cartesian(xlim = c(0,85),
+                        expand = FALSE)+
+        xlab("Accumulated rainfall \n over past 7 days (mm)")+
+        theme(legend.position = "bottom")
+
+# p3 <- modelresults2016%>% ggplot(aes(x=ARXD))+
+#         geom_line(aes(y=exp(fit)),col="darkblue")+
+#         geom_ribbon(aes(ymin=exp(lower),ymax=exp(upper)),
+#                     #lty=2, fill=NA,
+#                     alpha=0.1,
+#                     fill="darkblue")+
+#         geom_hline(yintercept = 1)+
+#         ylab("Relative R0(t) over \n the next 10 days")+
+#         theme_cowplot() +
+#         scale_y_continuous(trans="log10")+
+#         coord_cartesian(xlim = c(0,85),
+#                         expand = FALSE)+
+#         xlab("Accumulated rainfall \n over past 7 days (mm)")
+# 
+# p4 <- modelresultsPhelps%>% ggplot(aes(x=ARXD))+
+#         geom_line(aes(y=exp(fit)),col="darkblue")+
+#         geom_ribbon(aes(ymin=exp(lower),ymax=exp(upper)),
+#                     #lty=2, fill=NA,
+#                     alpha=0.1,
+#                     fill="darkblue")+
+#         geom_hline(yintercept = 1)+
+#         ylab("Relative R0(t) over \n the next 10 days")+
+#         theme_cowplot() +
+#         scale_y_continuous(trans="log10")+
+#         coord_cartesian(xlim = c(0,85),
+#                         expand = FALSE)+
+#         xlab("Accumulated rainfall \n over past 7 days (mm)")
+
+
+plot_grid(p3,p4,ncol=1,align="v")
+# ggsave("posterfigures/dlnm.png",plot=dplot,
+#        height = 8.1, width = 8)
+
+```
+
+
+
+\pagebreak
+
+
+### Table S2. Number of arrivals recorded by the International Office of Migration by country of origin 
+
+
+```{r ts2, message=FALSE, echo=FALSE,warning=FALSE,fig.width = 7, fig.asp = 1.5}
+source("source/fig_movement.R")
+
+ft <- final_d %>% group_by(countryOrigin,period) %>%
+        summarize(count=sum(count)) %>%
+        spread(period,count) %>%
+        ungroup() %>%
+        mutate(countryOrigin=factor(countryOrigin)) %>%
+        mutate(countryOrigin = relevel(countryOrigin,
+                                       "South Sudan"))%>%
+        rename(`Country of Origin`=countryOrigin)
+
+ft[is.na(ft)] <- 0
+
+
+ft %>% flextable()%>% autofit()
+
+```
+\pagebreak
+
+
+### Figure S7. Heatmap of domestic population movement between states of South Sudan. 
+Color is log transformed. If no block exists, no movement was recorded for that particular origin-assessment pair
+
+```{r fs6, message=FALSE, echo=FALSE,warning=FALSE,fig.width = 10,fig.asp=0.8}
+
+final_d %>%
+        filter(countryOrigin=="South Sudan")%>%
+        left_join(my_map, by=c("origin"="admin2Name")) %>%
+        rename(o1 = admin1Name) %>%
+        left_join(my_map, by=c("assess"="admin2Name")) %>%
+        rename(a1 = admin1Name) %>%
+        group_by(o1,a1,period) %>%
+        summarize(count=sum(count)) %>%
+        ggplot(aes(x=o1,y=a1,
+                   fill=count))+
+        geom_tile()+
+        scale_fill_distiller(name="Arrivals",
+                             trans="log10",
+                             direction=1)+
+        facet_wrap(.~period,ncol=2)+theme_cowplot()+
+        theme(axis.text.x = element_text(angle = -90))+
+        xlab("State of Origin")+
+        ylab("State Assessed")
+
+```
+\pagebreak
+
+### Figure S8. International cross-border movement of individuals returning to South Sudan (A) and Incidence rates of cholera in neighboring countries (B)
+Geographic location is not known below the country level. Incidence rates calculated using WHO reports and population number from (https://population.un.org/wpp/DataQuery/). Though Sudan is believed to be endemic for cholera, but has not historically reported it to the WHO. Grey areas were not assessed by the IOM for migration.
+
+```{r fs7, message=FALSE, echo=FALSE,warning=FALSE,fig.width = 10, fig.asp = 0.67}
+source("source/fig_movement.R")
+
+k <- data.frame(country=c("Ethiopia",
+                          "Kenya",
+                          "DRC",
+                          "Kenya",
+                          "Uganda",
+                          "Sudan"
+),
+deg=c(-90,0,0,0,0,0)
+) %>%
+        left_join(centroids,by=c(country="admin2Name"))%>%
+        bind_rows(data.frame(
+                country="CAF",
+                deg=0,
+                centerx=25,
+                centery=7
+        ))
+
+sf7a<- final_d  %>% filter(count>300 & countryOrigin!="South Sudan") %>%
+        bind_rows(data.frame(period="2014"))%>%
+        ggplot() +
+        geom_sf(data=my_map,
+                aes(fill=assessed),col=NA) +
+        geom_sf(data=my_map %>% group_by(admin1Name)%>%summarize(Shape_Area=sum(Shape_Area)),
+                fill=NA,col="black",lwd=0.1)+
+        theme_void() +
+        coord_sf(datum = NA) +
+        geom_curve(
+                aes(col=count,x=x_assess,y=y_assess,xend = x_origin, yend = y_origin),
+
+                arrow = arrow(length=unit(0.20,"cm"),
+                              ends="first", type = "closed"),
+                                curvature=.2) +
+        geom_text(data=k,aes(label=country,
+                             angle=deg,
+                             x=centerx,y=centery)) +
+        facet_wrap(period~.,nrow=1) +
+        scale_colour_distiller(name="Population",palette ="Greens",
+                               direction=1,trans="log10")+
+        scale_x_continuous(expand = c(.1, .1))+
+        scale_fill_manual(values = c("#d9d9d9","white"))+
+        guides( fill = FALSE)
+
+
+
+
+
+cases <- data.frame(country=c(rep("Ethiopia",4),
+                     rep("Kenya",4),
+                     rep("Uganda",4),
+                     #rep("Sudan",4),
+                     rep("CAF",4),
+                     rep("DRC",4)),
+           cases=c(NA,NA,NA,NA,
+                   35,13291 ,5866,4288,
+                   309,1461,516,252,
+                   #NA,NA,NA,NA,
+                   NA,NA,NA,NA,
+                   22203,19182,28093,56190),
+           pop=1000*c(rep(100835,4),
+                      rep(47878,4),
+                      rep(38225,4),
+                    #  rep(38903,4),
+                      rep(4493,4),
+                      rep(76245,4)),
+           year=rep(2014:2017,5)#6)
+           )
+
+sf7b<- cases %>% ggplot(aes(x=year,y=cases/pop*100000,col=country,shape=country)) +
+                geom_point()+geom_line() +
+        scale_y_continuous(trans="log10") +
+        ylab("Reported cases \n per 100,0000") +
+        xlab("Year")+ theme_cowplot()
+
+plot_grid(sf7a,sf7b,ncol=1, labels = c("A","B"),rel_heights = c(1,1))
+
+
+```
+\pagebreak
+
+### Figure S9. Analysis of cholera cases in the counties of South Sudan, Jan 2014 - Dec 2018
+Incidence and the proportion of weeks with cholera cases are shown for each cholera affected county. Both axes are square-root transformed.
+
+```{r fs8, message=FALSE, echo=FALSE,warning=FALSE,fig.width = 10, fig.asp = 0.67}
+df<- read_rds("ssd_who_meeting.rds")
+
+p0 <- df %>% ggplot(aes(x=prop_weeks,
+                  y=incidence,label=admin2Name))+
+                geom_point() +
+                ggrepel::geom_text_repel() +
+                xlab("Percentage of weeks (%)") +
+                ylab("Cases per 1000 PY")+
+                #ggtitle("Cholera Hotspot Analysis (2014-2018)") +
+        scale_y_continuous(trans="sqrt")+
+        scale_x_continuous(trans="sqrt")+
+        theme_cowplot()
+
+
+#Put together sf object for GTFCC meeting
+#sf_andrew <- map %>% left_join(df, by="admin2Name")
+p1<-df %>% ggplot(aes(geometry=geometry)) + geom_sf(aes(fill=incidence),
+                                 col="black") +
+                scale_fill_distiller(palette="YlOrRd",
+                                     direction = 1,
+                                     name="Cases per \n 1000 per year")+
+                theme_void()+
+                ggtitle("Incidence")
+
+p2<-df %>% ggplot(aes(geometry=geometry)) + geom_sf(aes(fill=prop_weeks),
+                                 col="black") +
+        scale_fill_distiller(palette="YlOrRd",
+                             direction = 1,
+                             name="%")+
+        theme_void()+
+        ggtitle("Percentage of weeks (%)")
+
+
+plot_grid(p0,plot_grid(p1,p2,nrow=1, align="v"),ncol=1,rel_heights = c(2,1))
+
+```
+\pagebreak
+
+### Figure S10. Monthly geographic distribution of suspected cholera cases in South Sudan, June 2016 - November 2017.
+County borders are indicated in black. Light blue line represents the Nile river.
+
+```{r fs9, message=FALSE, echo=FALSE,warning=FALSE,fig.width = 8, fig.asp=1}
+#bring in data
+master_dat <- read_rds("generated_data/master_linelist_simp.rds")
+nile <- read_rds("data/nile_river/nile.rds")
+map <- read_sf("data/ssd_admbnda_adm2_200k_ssnbs_20160114.shp")
+
+ob20162017<- master_dat %>%filter(year(onset_date) %in% c(2016,2017)) %>%
+        mutate(yearmonth=format(as.Date(onset_date), "%Y-%m"))%>%
+        #mutate(yearmonth=paste0(year(onset_date),month(onset_date),sep = "-")) %>%
+        group_by(yearmonth,admin2Name) %>%
+        summarize(cases=n()) %>% filter(!is.na(yearmonth))
+
+cases <- as.data.frame(map) %>% select(admin2Name) %>% left_join(ob20162017)%>% 
+        spread(yearmonth,cases) %>% gather(yearmonth,cases,-admin2Name) %>%
+        filter(yearmonth!="<NA>")
+
+map %>% left_join(cases,by="admin2Name") %>%
+        ggplot(aes(fill=cases)) +geom_sf(col="black",lwd=0.1) +
+        geom_sf(inherit.aes = FALSE,data=nile,col='cadetblue1', lwd=1)+
+        facet_wrap(yearmonth~.,ncol=4)+
+        theme_void()+
+        scale_fill_viridis(trans="log10", na.value="white", name="Suspected \n Cases")
+
+
+```
+
+\pagebreak
+
+
+### References
+
+
+1.  Camacho A, Bouhenia M, Alyusfi R, Alkohlani A, Naji MA, de Radiguès X, Abubakar AM, Almoalmi A, Seguin C, Sagrado MJ, Poncin M. Cholera epidemic in Yemen, 2016–18: an analysis of surveillance data. The Lancet Global Health. 2018 Jun 1;6(6):e680-90.
+
+2.  Phelps M, Perner ML, Pitzer VE, Andreasen V, Jensen PK, Simonsen L. Cholera epidemics of the past offer new insights into an old enemy. The Journal of infectious diseases. 2018 Jan 30;217(4):641-9.
+
+3.  King AA, Ionides EL, Pascual M, Bouma MJ. Inapparent infections and cholera dynamics. Nature. 2008 Aug;454(7206):877-80.
+
+
+
+ 
