@@ -82,7 +82,10 @@ master_dat %>% group_by(wave,sex)%>%
 
 master_dat %>% filter(admin2Name=="Ayod") %>%
         filter(wave=="2016/2017") %>%
-        group_by(yr=year(onset_date_imp))
+        group_by(yr=year(onset_date_imp))%>%
+        summarize(count=n(),
+                 min= min(onset_date_imp),
+                 max=max(onset_date_imp))
 
 ```
 
