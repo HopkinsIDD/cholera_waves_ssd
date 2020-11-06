@@ -1,0 +1,619 @@
+---
+title: "Main Text Figures"
+author: "Forrest Jones"
+date: "8/16/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+### Load Libraries and data
+
+```{r loading}
+source("code/extra/utils.R")
+reload_source()
+
+
+# Generation of linelist data
+#
+# dat_2014 <- load_and_clean_2014_data() %>% mutate(wave="2014")
+# dat_2015 <- load_and_clean_2015_data()%>% mutate(wave="2015")
+# dat_2017 <- load_and_clean_2017_data()%>% mutate(wave="2016/2017")
+# 
+# master_dat <- bind_rows(dat_2014,dat_2015,dat_2017)
+# 
+# missing <- filter(master_dat,is.na(onset_date_imp)|is.na(admin2Name)) %>%
+#               select(wave,onset_date_imp,admin2Name)
+# saveRDS(master_dat,file="data/generated_data/master_linelist_final.rds")
+
+master_dat <- read_rds("data/generated_data/master_linelist_final.rds")
+
+```
+
+### Figure 1: Epidemic curve and maps
+
+```{r figure1}
+#bring in the rainfall data
+rainfall_daily <- read_csv("data/raw_data/ssd_chirps_data.csv",skip=1) %>%
+  rename(precip = `Average_CHIRPS_Rainfall(mm/day)`) %>%
+  mutate(Date = as.Date(Date,format="%m/%d/%Y",origin="1970-1-1"),
+         week = floor_date(Date - 1, "weeks") + 1)
+rainfall_weekly <- rainfall_daily %>% group_by(week) %>%
+  summarize(precip = sum(precip))
+
+
+
+epicurv <- master_dat %>%
+  mutate( week = floor_date(onset_date_imp - 1, "weeks") + 1,
+          Location=ifelse(admin2Name %in% "Juba","Juba","Other Counties"))%>%
+  group_by(week, Location) %>% 
+  summarize(cases = n()) %>% filter(!(is.na(week))) %>%
+  left_join(rainfall_weekly, by = "week")
+
+
+p1 <- ggplot() + geom_bar(stat="identity",
+                          position = "identity",
+                          data=epicurv,
+                          alpha=0.5,
+                          aes(x=week, y= cases, fill=Location)) +
+        geom_rug(data=rainfall_weekly,
+                 aes(week,col=precip),
+                 inherit.aes = FALSE
+                 ) +
+        ylab("Weekly suspected cases")+
+        scale_fill_manual(values=c("red", "darkgrey"))+
+        scale_color_distiller(name="Rainfall (mm/week)",
+                              palette = "Blues",
+                              direction  = 1,
+                              breaks=c(15,30,45)) +
+        theme_cowplot() +
+         theme(legend.position = "bottom",
+               panel.grid.major.x = element_line(colour = "#f0f0f0"),
+              panel.grid.minor.x = element_line(
+                                                        colour = "#f0f0f0"),
+              panel.grid.major.y = element_line(colour = "#f0f0f0"))+
+        scale_x_date(breaks = seq.Date(as.Date("2014-01-01"),
+                                                 as.Date("2018-01-01"),
+                                                 by = "12 months"),
+            minor_breaks=seq.Date(as.Date("2014-01-01"),
+                                                 as.Date("2018-01-01"),
+                                                 by = "2 months"))+
+        xlab("Calendar week")
+
+
+map <- read_sf("data/raw_data/ssd_admbnda_adm2_200k_ssnbs_20160114.shp")
+mapdf <- as.data.frame(map) %>% select(-geometry)
+nile <- read_rds("data/raw_data/nile_river/nile.rds")
+states <- map %>% group_by(admin1Name) %>%
+        summarize()
+statlab <- states
+statlab$year <- c(2014,2016,2014,2015,
+                  2017,2014,2015,2016,
+                  2015,2017)
+        # c(2014,2014,2016,
+        #           2016,2015,2017,
+        #           2017,2015,2015,2014)
+
+
+all_cases <- master_dat %>%
+        mutate(tsdist=month(onset_date_imp),year=year(onset_date_imp))%>%
+        group_by(admin2Name,year) %>%
+                summarize(tsdist=min(tsdist)) %>%
+        filter(!is.na(year))%>%
+        select(year,admin2Name,tsdist)%>%
+        arrange(year,admin2Name,tsdist)
+        
+
+
+
+p2 <- left_join(mapdf,all_cases) %>% complete(admin2Name,year) %>%
+        filter(!is.na(year))%>%
+        select(year,admin2Name,tsdist)%>%
+        right_join(map,by="admin2Name")%>%
+        ggplot() +
+        geom_sf(aes(fill=tsdist,
+                    geometry=geometry),
+                col=NA) +
+        scale_fill_viridis("Month of first \n reported case",
+                           #option="B",
+                           direction = -1,
+                           na.value="transparent", limits = c(1,12)) +
+        geom_sf(data=nile,col='cadetblue1', lwd=1)+
+        geom_sf(data=states,
+                fill=NA,col="black",lwd=0.1) +
+        # annotate("point", x = 31.36, y = 4.51, shape=18,size=3)+
+        # geom_text(x=31.36,y=4.51,
+        #           label="★", size=5, family = "HiraKakuPro-W3")+
+        # geom_label_repel(data=statlab,
+        #                  aes(label = admin1Name,
+        #                      geometry = geometry),
+        #                  size=2, fill=NA,
+        #                  force=10,
+        #                  #xlim=c(34,29),
+        #                  stat = "sf_coordinates")+
+        #geom_hline(yintercept=29:33)+
+        #geom_vline(xintercept=2:6)+
+        theme_void() + 
+        coord_sf(crs = st_crs(map), datum = NA)+
+        facet_wrap(.~year,nrow=1)+
+        scalebar(map, dist = 150, dist_unit = "km",st.size = 2,
+                 border.size=0.1,
+         # facet.var = "period",  
+         # facet.lev = "2014", 
+         transform = TRUE, model = "WGS84")
+
+f1<- plot_grid(p1,p2,ncol=1, rel_heights = c(2/3,1/3))
+
+f1
+# ggsave("products/figures/f1_epicurv.pdf",plot=f1,
+#        height = 5, width = 8)
+```
+
+### Table 1:  Cases and deaths by wave and county
+
+```{r table1}
+#bring in population estimates
+worldpop_dat <- read_csv("data/raw_data/SSD15adjv3_tif+SSD-HDX-Borders_adm2_zonal.csv") %>%
+        select(admin1Name, admin2Name,SUM) %>% 
+        rename(Pop = SUM,
+               state= admin1Name)
+
+#get the estimates
+t1 <- master_dat %>%
+        group_by(wave,admin2Name) %>%
+        summarize(cases = n(),
+                  deaths = sum(died, na.rm = TRUE))%>%
+        filter(!is.na(admin2Name))
+
+
+# 2 cases had no county associated in their data
+# missingt1 <- master_dat %>%
+#         group_by(wave,admin2Name) %>%
+#         summarize(cases = n(),
+#                   deaths = sum(died, na.rm = TRUE))%>%
+#         filter(is.na(admin2Name))
+
+
+#create separate tables for cases and deaths
+t1_cases <- t1 %>% select(-deaths) %>%spread(wave,cases) %>%
+          rename(cases14=`2014`,cases15=`2015`,cases1617=`2016/2017`)
+t1_deaths <- t1 %>% select(-cases) %>%spread(wave,deaths)%>%
+          rename(deaths14=`2014`,deaths15=`2015`,deaths1617=`2016/2017`)
+                
+t1_cases[is.na(t1_cases)] <- 0
+t1_deaths[is.na(t1_deaths)] <- 0
+
+
+#bring all the things together
+t1_combo <- right_join(worldpop_dat,t1_cases) %>%
+  left_join(t1_deaths) %>% arrange(state,admin2Name)
+
+#create south sudan row
+t1_full <- t1_combo %>% summarise(cases14=sum(cases14),
+                                 cases15=sum(cases15),
+                                 cases1617=sum(cases1617),
+                                 deaths14=sum(deaths14),
+                                 deaths15=sum(deaths15),
+                                 deaths1617=sum(deaths1617)
+                                 ) %>%
+  #add two cases with missing county for 2014
+  mutate(cases14=cases14+2) %>%
+  mutate(state = "South Sudan", admin2Name = "", Pop=11654000) %>%
+  bind_rows(t1_combo,.)
+
+
+
+
+t1_fullAlt <- t1_full
+
+t1_fullAlt$ARCI14 <- apply(t1_fullAlt[c("cases14","Pop")],1,FUN=ARpoissonCIalt)
+t1_fullAlt$ARCI15 <- apply(t1_fullAlt[c("cases15","Pop")],1,FUN=ARpoissonCIalt)
+t1_fullAlt$ARCI1617 <- apply(t1_fullAlt[c("cases1617","Pop")],1,FUN=ARpoissonCIalt)
+
+t1_fullAlt$CFRCI14 <- apply(t1_fullAlt[c("cases14","deaths14")],1,FUN=CFRexactCIalt)
+t1_fullAlt$CFRCI15 <- apply(t1_fullAlt[c("cases15","deaths15")],1,FUN=CFRexactCIalt)
+t1_fullAlt$CFRCI1617 <- apply(t1_fullAlt[c("cases1617","deaths1617")],1,FUN=CFRexactCIalt)
+
+
+#format the flextable object without confidence intervals
+t1_prettyAlt <- t1_fullAlt %>% mutate(Pop= round(Pop/1000,0)) %>%
+                rename(`Pop per 1000`=Pop,
+                       State=state,
+                       County=admin2Name,
+                       Cases=cases14,
+                       Deaths=deaths14,
+                       `AR per 1000`=ARCI14,
+                       `CFR (%)`=CFRCI14
+                       
+                       ) %>%
+                flextable() %>% 
+                #Merging header rows
+                merge_v(~State) %>% valign(valign = "top") %>%
+                merge_at(i = 1, j = 4:6, part = "header") %>%
+                merge_at(i = 1, j = 7:9, part = "header") %>%
+                merge_at(i = 1, j = 10:12, part = "header") %>%
+                merge_at(i = 1, j = 13:15, part = "header") %>%
+                add_header_row( values =
+                  c("", "","",
+                    "W1","W2","W3","W1","W2","W3", 
+                    "W1","W2","W3","W1","W2","W3"
+                    ), top = FALSE )%>%
+                align(j=3:15, align="center",part="all") %>%
+                #shading
+                bg(bg = "#CFCFCF", j=c(4:6,10:12), part="all")%>%
+  
+                #font size
+                fontsize(size = 8.5, part = "all")%>%
+                font(fontname="Arial", part = "all") %>%
+                bold(bold = TRUE, part = "header")%>%
+
+                #Sizing
+                autofit(add_w = 0, add_h = 0) %>%
+                #widths
+                width( j = 1, width=1.7) %>%
+                width( j = 2, width=1.1) %>%
+                width( j = 3, width=1) %>%
+                width( j = 4:6, width=0.55) %>%
+                width( j = 7:9, width=0.4) %>%
+                width( j = 10:15, width=0.45)
+
+
+t1_prettyAlt
+            
+#format the flextable object with confidence intervals
+
+# doc2 <- officer::read_docx()
+# doc2 <- body_add_flextable(doc2, value = t1_prettyAlt)
+# print(doc2, target = "tableNoCI.docx")
+# 
+# 
+# 
+# t1_full$ARCI14 <- apply(t1_full[c("cases14","Pop")],1,FUN=ARpoissonCI)
+# t1_full$ARCI15 <- apply(t1_full[c("cases15","Pop")],1,FUN=ARpoissonCI)
+# t1_full$ARCI1617 <- apply(t1_full[c("cases1617","Pop")],1,FUN=ARpoissonCI)
+# 
+# t1_full$CFRCI14 <- apply(t1_full[c("cases14","deaths14")],1,FUN=CFRexactCI)
+# t1_full$CFRCI15 <- apply(t1_full[c("cases15","deaths15")],1,FUN=CFRexactCI)
+# t1_full$CFRCI1617 <- apply(t1_full[c("cases1617","deaths1617")],1,FUN=CFRexactCI)
+# 
+# 
+# 
+# #format the flextable object
+# t1_pretty <- t1_full %>% mutate(Pop= round(Pop/1000,0)) %>%
+#                 rename(`Pop per 1000`=Pop,
+#                        State=state,
+#                        County=admin2Name,
+#                        Cases=cases14,
+#                        Deaths=deaths14,
+#                        `AR per 1000`=ARCI14,
+#                        `CFR (%)`=CFRCI14
+#                        
+#                        ) %>%
+#                 flextable() %>% 
+#                 #Merging header rows
+#                 merge_v(~State) %>% valign(valign = "top") %>%
+#                 merge_at(i = 1, j = 4:6, part = "header") %>%
+#                 merge_at(i = 1, j = 7:9, part = "header") %>%
+#                 merge_at(i = 1, j = 10:12, part = "header") %>%
+#                 merge_at(i = 1, j = 13:15, part = "header") %>%
+#                 add_header_row( values =
+#                   c("", "","",
+#                     "W1","W2","W3","W1","W2","W3", 
+#                     "W1","W2","W3","W1","W2","W3"
+#                     ), top = FALSE )%>%
+#                 align(j=3:15, align="center",part="all") %>%
+#                 #shading
+#                 bg(bg = "#CFCFCF", j=c(4:6,10:12), part="all")%>%
+#   
+#                 #font size
+#                 fontsize(size = 8.5, part = "all")%>%
+#                 font(fontname="Arial", part = "all") %>%
+#                 bold(bold = TRUE, part = "header")%>%
+# 
+#                 #Sizing
+#                 autofit(add_w = 0, add_h = 0) %>%
+#                 #widths
+#                 width( j = 1, width=1.7) %>%
+#                 width( j = 2, width=1.1) %>%
+#                 width( j = 3, width=1) %>%
+#                 width( j = 4:6, width=0.55) %>%
+#                 width( j = 7:9, width=0.4) %>%
+#                 width( j = 10:15, width=1)
+# 
+# doc <- officer::read_docx()
+# doc <- body_add_flextable(doc, value = t1_pretty)
+# print(doc, target = "tablewCI.docx")
+
+
+
+
+```
+
+
+
+### Figure 2: Epidemic Heatmap
+
+```{r figure2}
+map <- read_sf("data/raw_data/ssd_admbnda_adm2_200k_ssnbs_20160114.shp")
+mapdf <- as.data.frame(map) %>% select(-geometry)
+
+
+worldpop_dat <- read_csv("data/raw_data/SSD15adjv3_tif+SSD-HDX-Borders_adm2_zonal.csv") 
+
+ocv_dat <- read_xlsx("data/raw_data/ocv_summary_south_sudan.xlsx",na = c("","?")) %>%
+        rename(admin2Name = County,doses_r1 = `Doses administered 1st round`) %>%
+        mutate(date_r1 = as.Date(`Start\r\n1st round`,origin="1970-1-1"),
+               `OCV Framework` = ordered(Framework,levels=c('ICG',"GTFCC",'Leftovers'))
+        )
+
+
+ocv_dat <- left_join(ocv_dat,worldpop_dat %>% select(admin2Name,SUM)) %>%
+        mutate(r1_prop_pop = doses_r1/SUM)
+
+masterfinal <- master_dat %>%
+        mutate( week = floor_date(onset_date_imp - 1, "weeks") + 1) %>%
+        group_by(week, admin2Name) %>% 
+        summarize(cases=n()) %>%
+        filter(!is.na(week) & !(is.na(admin2Name))) %>%
+        left_join(mapdf, by = "admin2Name")
+  
+  #make graph
+f2 <- masterfinal %>%  ggplot() + geom_tile(aes(x=week,y=admin2Name, fill= cases),
+                             height=0.5) +
+        geom_point(data = ocv_dat %>%
+                           # filter( !admin2Name %in% c("Panyijiar","Wau")) %>%
+                           left_join(mapdf,by="admin2Name"),
+                   aes(x=date_r1,
+                       size=(100*r1_prop_pop),
+                       y=admin2Name),
+                   #col="blue",
+                       shape=1 #col = "red"
+                   
+                   )+ theme_cowplot()+
+        facet_grid(admin1Name~.,
+                   scales = "free",
+                   space="free"
+                   )+
+        scale_fill_viridis(option="plasma",
+                           #direction=-1,
+                           name="Weekly Cases",
+                           trans = "log10")+
+        theme(strip.text.y = element_text(#size = 5, 
+                                          angle = 0),
+              axis.title.x=element_blank(),
+              axis.title.y=element_blank()) +
+        geom_vline(xintercept=as.Date(c("2015-01-01","2016-01-01","2017-01-01")), lty=2)+
+        guides(size=guide_legend(title="First OCV Dose \n Coverage (%)")) 
+
+f2
+
+# ggsave("products/figures/f2_heatmap.pdf",plot=f2, device="pdf",
+#        height = 7.4, width = 14.6)
+
+
+```
+
+
+### Figure 3: Phylogenetic Tree
+
+### Figure 4: Population Movement
+
+```{r readyIOMdata}
+
+my_map <- read_sf("data/raw_data/ssd_admbnda_adm2_200k_ssnbs_20160114.shp") 
+worldpop_dat <- read_csv("data/raw_data/SSD15adjv3_tif+SSD-HDX-Borders_adm2_zonal.csv") 
+
+
+#generate long iomdata
+# iomdata <- readxl::read_xlsx("data/raw_data/20180720 IOM DTM MT R2 Final dataset_FJedited.xlsx")
+# source("code/extra/iom_generate_long.R")
+
+#get incidence dataframe
+incidence <- master_dat %>% 
+        
+        mutate(
+                period= as.character(year(onset_date_imp)),
+                month = month(onset_date_imp)
+        ) %>% 
+        filter(!(is.na(period))) %>%
+        group_by(period,
+                 admin2Name) %>%
+        summarize(cases = n()) %>% 
+        left_join((worldpop_dat %>% dplyr::select(admin2Name,SUM))) %>%
+        rename(Pop = SUM,
+               origin = admin2Name) %>%
+        mutate(AR=cases/Pop) %>% select(origin,period,AR)
+
+#get iom dataset ready
+final_iomdata <- read_csv("data/generated_data/IOM_longdata.csv") %>%
+        #split 2015/2016 into two years (will re-add below)
+        mutate(number = ifelse(period=="2015/2016",number/2,number))
+
+final_iomdata <- final_iomdata %>% 
+        mutate(period = recode(period,
+                               `2013/2014` = "2014",
+                               `2015/2016` = "2015",
+                               `2017JanJun`="2017",
+                               `2017JulDec`="2017"
+                                )) %>%
+        # re-add 2016
+        bind_rows(filter(final_iomdata,period=="2015/2016")) %>%
+        mutate(period = recode(period,
+                               `2015/2016` = "2016")) %>%
+        #edit name of county
+        mutate(
+                origin=ifelse(countryOrigin=="South Sudan",countyOrigin,countryOrigin),
+                origin= ifelse(origin =="Aweil Center","Aweil Centre",origin),
+                origin= ifelse(origin =="Canal (Khorfulus)","Canal/Pigi",origin),
+                origin= ifelse(origin =="Ikwoto","Ikotos",origin),
+                origin= ifelse(origin =="Kajo-Keji","Kajo-keji",origin),
+                origin= ifelse(origin =="Luakpiny (Nasir)","Luakpiny/Nasir",origin),
+                origin= ifelse(origin =="Raja","Raga",origin),
+                origin= ifelse(origin =="Terkeka","Terekeka",origin),
+                
+                assess= countyAssessed,
+                assess= ifelse(assess =="Aweil Center","Aweil Centre",assess),
+                assess= ifelse(assess =="Canal (Khorfulus)","Canal/Pigi",assess),
+                assess= ifelse(assess =="Kajo-Keji","Kajo-keji",assess),
+                
+                count = number
+        ) %>% 
+        select(period,origin, assess,count,countryOrigin, admin2Pcod) %>% 
+        group_by(period,origin, assess,countryOrigin,admin2Pcod) %>%
+        summarize(count=sum(count))  %>% ungroup(period)%>%
+        filter(period!="2018JanApr" & count !=0)
+
+#generate centroids for county
+my_map <- my_map %>% mutate(center= st_centroid(geometry)) %>%
+        mutate(assessed= admin2Pcod %in% unique(final_iomdata$admin2Pcod))
+centroids <- select(as.data.frame(my_map), admin2Name,center) %>%
+        mutate(centerx =NA, centery = NA) 
+
+for (i in seq_along(centroids$admin2Name)){
+        centroids$centerx[i] <- centroids$center[[i]][[1]]
+        centroids$centery[i] <- centroids$center[[i]][[2]]
+}
+
+centroids <- centroids %>% select(-center)
+
+#add points from other countries
+cent_country <- data.frame(
+        admin2Name = c("Sudan", "Uganda", "Kenya", "Ethiopia", "DRC"),
+        centery = c(10.83,3.00,3.54,8.5,3.72),
+        centerx = c(28.88,32.61,35.91,34.71,27.86)
+)
+
+centroids <- rbind(centroids,cent_country)
+
+#combine centroid with dataset
+final_iomdata <- final_iomdata %>% 
+        #add centroids for the origin
+        left_join(centroids, by= c("origin"="admin2Name")) %>%
+        rename(x_origin=centerx ,
+               y_origin=centery     ) %>%
+        #add centroids for end of arrow where assessment occurred
+        left_join(centroids, by= c("assess"="admin2Name")) %>%
+        rename(x_assess = centerx ,
+               y_assess = centery     )%>%
+        filter(origin!=assess) %>%
+        filter(origin != "Other (Specify)")
+```
+
+
+```{r figure4}
+
+# source("source/fig_movement.R")
+
+##Attack rate maps
+p1 <- my_map %>% select(admin2Name) %>% 
+        left_join(
+                spread(incidence,period,AR), 
+                by= c("admin2Name"="origin")) %>%
+        gather(period, attackRate, -c(admin2Name,geometry)) %>%
+        mutate(attackRate=attackRate*100) %>%
+        ggplot() +
+        geom_sf(aes(fill=attackRate),col=NA) +
+        geom_sf(data=my_map %>% group_by(admin1Name)%>%summarize(Shape_Area=sum(Shape_Area)),
+                fill=NA,col="black",lwd=0.1)+
+        theme_void() +
+        scale_fill_distiller(name= "Attack Rate \n(%)",
+                             palette ="Reds", 
+                             direction=1,trans="log10",
+                             na.value="white")+
+        # geom_text(x=31.36,y=4.51,
+        #           label="★", size=5, family = "HiraKakuPro-W3")+
+        #scale_fill_viridis(trans="log10")+
+        facet_wrap(.~period,nrow=1)+
+        #theme(legend.position = "bottom") +
+        #guides(fill=guide_legend(title="Attack Rate"))+
+    scalebar(my_map, dist = 150, dist_unit = "km",st.size = 2,
+                    border.size=0.1,
+             # facet.var = "period",  
+             # facet.lev = "2014", 
+             transform = TRUE, model = "WGS84")
+
+
+#just movement maps
+p2<- final_iomdata  %>% filter(count>100 & countryOrigin=="South Sudan")  %>%
+        ggplot() +
+        geom_sf(data=my_map,
+                aes(fill=assessed),col=NA) +
+        geom_sf(data=my_map %>% group_by(admin1Name)%>%summarize(Shape_Area=sum(Shape_Area)),
+                fill=NA,col="black",lwd=0.1) +
+        theme_void() +
+        coord_sf(datum = NA) +
+        geom_curve(#data=final_d,
+                aes(col=count,x=x_assess,y=y_assess,xend = x_origin, yend = y_origin),
+                alpha=0.5,
+                arrow = arrow(length=unit(0.12,"cm"), 
+                              ends="first", type = "closed"),
+                
+                #lwd=1,
+                curvature=.2) + 
+        # geom_text(x=31.36,y=4.51,
+        #           label="★", size=5, family = "HiraKakuPro-W3")+
+        facet_wrap(period~.,nrow=1) +
+        #theme(legend.position = "bottom")+
+        #guides(col=guide_legend(title="Population"))+
+        scale_colour_distiller(name= "Population \nMovement",
+                               palette ="YlGnBu", direction=1,trans="log10")+
+        scale_fill_manual(values = c("lightgrey","white"))+
+        guides( fill = FALSE)
+
+#just infectious pressure
+p3 <- incidence %>% 
+        inner_join(
+                filter(final_iomdata,
+                       countryOrigin=="South Sudan"),
+                by=c("origin","period")) %>%
+        mutate(infectiousPressure=round(count*AR,2)) %>%
+        filter(infectiousPressure>0.01) %>%
+        ggplot() +
+        geom_sf(data=my_map,
+                aes(fill=assessed),col=NA) +
+        geom_sf(data=my_map %>% group_by(admin1Name)%>%summarize(Shape_Area=sum(Shape_Area)),
+                col="black",fill = NA,lwd=0.1) +
+        theme_void() +
+        coord_sf(datum = NA) +
+        geom_curve(#data=final_d,
+                aes(col=infectiousPressure,x=x_assess,y=y_assess,xend = x_origin, yend = y_origin),
+                arrow = arrow(length=unit(0.12,"cm"), 
+                              ends="first", type = "closed"),
+                alpha=0.5,
+                
+                #lwd=1,
+                curvature=.2) + 
+        # geom_text(x=31.36,y=4.51,
+        #           label="★", size=5, family = "HiraKakuPro-W3")+
+        facet_wrap(period~.,nrow=1) +
+        #scale_color_viridis(trans="log10",alpha=0.6,na.value="#000000")
+        scale_colour_distiller(name="Expected \nCases",
+                               palette ="RdPu", direction=1,trans="log10") +
+        scale_fill_manual(values = c("#d9d9d9","white"))+
+        # guides(colour = guide_colourbar(override.aes=list(alpha=0.5)),
+        guides(fill = FALSE)
+
+
+
+
+f4<- plot_grid(p1+theme(
+  strip.background = element_blank()#,
+  #strip.text.x = element_blank()
+),
+p2+theme(
+  strip.background = element_blank(),
+  strip.text.x = element_blank()
+),p3+theme(
+  strip.background = element_blank(),
+  strip.text.x = element_blank()
+),ncol=1)
+
+
+
+f4
+# ggsave("products/figures/f4_movement.pdf",plot=f4, device="pdf",
+#        height = 5, width = 8)
+
+```

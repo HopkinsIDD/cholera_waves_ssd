@@ -1,0 +1,131 @@
+---
+title: "Main Text Statistics"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Load Libraries and data
+
+```{r load}
+source("code/extra/utils.R")
+reload_source()
+
+# dat_2014 <- load_and_clean_2014_data() %>% mutate(wave="2014")
+# dat_2015 <- load_and_clean_2015_data()%>% mutate(wave="2015")
+# dat_2017 <- load_and_clean_2017_data()%>% mutate(wave="2016/2017")
+# 
+# master_dat <- bind_rows(dat_2014,dat_2015,dat_2017)
+# 
+# missing <- filter(master_dat,is.na(onset_date_imp)|is.na(admin2Name)) %>%
+#               select(wave,onset_date_imp,admin2Name)
+# saveRDS(master_dat,file="data/generated_data/master_linelist_final.rds")
+
+master_dat <- read_rds("data/generated_data/master_linelist_final.rds") 
+
+
+```
+
+
+## Results
+
+### Waves
+
+```{r waves}
+
+#number of cases and counties
+master_dat %>% group_by(wave)%>%
+                summarize(
+                                counties=length(unique(admin2Name)),
+                                cases=n(),
+                                deaths=sum(died,na.rm = TRUE),
+                                min=min(onset_date_imp,na.rm = TRUE),
+                                max=max(onset_date_imp,na.rm = TRUE),
+                                diff=round((max-min)/7,1)
+                          ) %>%
+                mutate( btw=(min-lag(max,1))/7)
+
+
+#cases missing in the table
+master_dat %>% filter(is.na(admin2Name)) %>%
+        select(wave)
+
+
+#children under 5
+master_dat %>%
+        mutate(under5 = ifelse(age<5,1,0)
+        ) %>% group_by(wave,under5)%>%
+                # filter(!is.na(under5))%>%
+                summarize(cases=n()
+                          )%>%
+                group_by(wave)%>%
+                mutate(total=sum(cases),
+                       percent=cases/total*100
+                       )
+
+#sex
+master_dat %>% group_by(wave,sex)%>%
+                summarize(cases=n(),
+                          )%>%
+                group_by(wave)%>%
+                mutate(total=sum(cases),
+                       percent=cases/total*100
+                       )
+
+```
+
+```{r waves}
+#ayod
+
+master_dat %>% filter(admin2Name=="Ayod") %>%
+        filter(wave=="2016/2017") %>%
+        group_by(yr=year(onset_date_imp))
+
+```
+
+### Vaccination Campaigns
+
+```{r vaccination}
+
+
+
+```
+
+
+### Molecular Analyses
+
+```{r molecular}
+
+
+
+```
+
+
+### The Role of Precipitation
+
+```{r precipitation}
+
+
+
+```
+
+
+### The Role of Population Movement in Cholera Dissemination
+
+```{r displacement}
+
+
+
+```
+
+
+## Discussion
+
+```{r discussion}
+
+
+
+```

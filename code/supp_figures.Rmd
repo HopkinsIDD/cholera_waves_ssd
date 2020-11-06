@@ -1,5 +1,5 @@
 ---
-title: "Supporting Information"
+title: "Appendix"
 output:
   word_document: default
   pdf_document: default
@@ -7,7 +7,7 @@ output:
 ---
 
 
-### _Successive epidemic waves of cholera in South Sudan, 2014 - 2017_
+### _Successive epidemic waves of cholera in South Sudan between 2014 and 2017: a descriptive epidemiological study_
 
 
 Forrest K Jones^1^, Joseph F Wamala^2^, John Rumunu^3^, Pinyi Nyimol Mawien^3^, Kol Mathew Tut^3^, Shirlee Wohl^1^, Lul Deng^3^, Lorenzo Pezzoli^4^, Linda Haj Omar^5^, Justin Lessler^1^, Marie-Laure Quilici^6^, Francisco J Luquero^7^, Andrew S Azman^1,8^  
@@ -34,9 +34,10 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r message=FALSE, warning=FALSE, echo=FALSE}
 
 ### Load libraries and functions
-source("source/utils.R")
+source("code/extra/utils.R")
 reload_source()
 
+master_dat <- read_rds("data/generated_data/master_linelist_final.rds")
 
 ```
 
@@ -45,7 +46,7 @@ Number of samples testing positive for cholera culture from the National Public 
 
 ```{r ts1, message=FALSE, echo=FALSE,warning=FALSE,fig.width = 7, fig.asp = 1.5}
 
-path <- "data/lab_linelist/labsamplelinelist_2014_edited.xls"
+path <- "data/raw_data/lab_linelist/labsamplelinelist_2014_edited.xls"
 
 # 2014
 data2014 <- path %>%
@@ -98,7 +99,7 @@ SS_2015 <- data2015_final %>% summarize(Positive=sum(Positive),
 ### 2017
 
 library(lubridate)
-path2017 <- "data/lab_linelist/Cholera lab specimen tracking sheet 25 Oct 2017_updated_edited.xlsx"
+path2017 <- "data/raw_data/lab_linelist/Cholera lab specimen tracking sheet 25 Oct 2017_updated_edited.xlsx"
 data2017 <- readxl::read_xlsx(path2017)
 
 data2017_final <- data2017 %>%
@@ -143,7 +144,7 @@ allLabll <- bind_rows(data2014_final,
                      data2017_final
                      ) %>% filter(state!="Unknown")%>%
                 mutate(Total=Positive+Negative,
-                       perPos=round(Positive/Total*100),
+                       perPos=round(Positive/Total*100,1),
                        final=paste(Positive,
                                    "/", Total,
                                    " (",perPos,
@@ -154,7 +155,7 @@ allSS <- bind_rows(SS_2014,
                 SS_2015,
                 SS_2017) %>%
         mutate(Total=Positive+Negative,
-               perPos=round(Positive/Total*100),
+               perPos=round(Positive/Total*100,1),
                final=paste(Positive,
                            "/", Total,
                            " (",perPos,
@@ -189,12 +190,12 @@ Each campaign is represented by a dot. The length of the line is the amount of t
 
 
 #bring in map data and population data
-map <- read_sf("data/ssd_admbnda_adm2_200k_ssnbs_20160114.shp")
+map <- read_sf("data/raw_data/ssd_admbnda_adm2_200k_ssnbs_20160114.shp")
 mapdf <- as.data.frame(map) %>% select(-geometry)
-worldpop_dat <- read_csv("data/SSD15adjv3_tif+SSD-HDX-Borders_adm2_zonal.csv")
+worldpop_dat <- read_csv("data/raw_data/SSD15adjv3_tif+SSD-HDX-Borders_adm2_zonal.csv")
 
 #bring in case data and break it up by week
-master_dat <- read_rds("generated_data/master_linelist_simp.rds")
+master_dat <- read_rds("data/generated_data/master_linelist_final.rds")
 masterfinal <- master_dat %>% mutate(year=ifelse(is.na(onset_date),format(visit_date, "%Y"),
                      format(onset_date, "%Y"))) %>%
         mutate( week = floor_date(onset_date_imp - 1, "weeks") + 1) %>%
@@ -221,7 +222,7 @@ peak <- masterfinal %>%
 
 
 #bring in ocv data
-ocv_dat <- read_xlsx("data/ocv_summary_south_sudan.xlsx",na = c("","?")) %>%
+ocv_dat <- read_xlsx("data/raw_data/ocv_summary_south_sudan.xlsx",na = c("","?")) %>%
         rename(admin2Name = County,doses_r1 = `Doses administered 1st round`) %>%
         mutate(date_r1 = as.Date(`Start\r\n1st round`,origin="1970-1-1"))%>%
         left_join(worldpop_dat %>% select(admin2Name,SUM)) %>%
@@ -299,7 +300,7 @@ plot_grid(p1,p2,ncol=2, labels=c("A","B"))
 ### Figure S2. Maximum likelihood tree of publicly available VC whole core genome sequences.
 T10 and T13 lineages, as defined in Weill et al. 2019, are indicated in black; sub-lineage of T10 containing South Sudan isolates (see Fig. 2) indicated in blue; 2014–2017 isolates from South Sudan indicated in orange.
 
-![](phylo_images\globaltree.cladeannot-01.png)
+![](../products/figures/phylo_images/globaltree.cladeannot-01.png)
 
 
 \pagebreak
@@ -312,7 +313,7 @@ Each row of the heatmaps represents one isolate. The left heatmap shows MLVA dat
 ```{r fs3, message=FALSE, echo=FALSE,warning=FALSE, fig.width = 10, fig.asp = .62}
 
 #load dataset
-mlva_resistance <- read_csv("data/mlva_resistance_mlq.csv") %>%
+mlva_resistance <- read_csv("data/raw_data/mlva_resistance_mlq.csv") %>%
   rename(sampleID = `N?CNRVC`)
 
 #MLVA dataframe
@@ -470,14 +471,14 @@ Each point represents a county-level outbreak during a specific year. Color indi
 ```{r fs4, message=FALSE, echo=FALSE,warning=FALSE,fig.width = 10, fig.asp = .62}
 
 # Rainfall
-master_dat <- read_rds("generated_data/master_linelist_simp.rds") %>%
+firstcase <- master_dat %>%
         mutate(year=as.character(year(onset_date_imp)))%>%
         group_by(admin2Name, year) %>%
         summarize(firstcase=min(onset_date_imp))
 
-mapdf <- as.data.frame(read_sf("data/ssd_admbnda_adm2_200k_ssnbs_20160114.shp")) %>%
+mapdf <- as.data.frame(read_sf("data/raw_data/ssd_admbnda_adm2_200k_ssnbs_20160114.shp")) %>%
         select(admin2Name,admin2Pcod)
-chrps_rainfall_2010_2018 <- read_csv("data/ssd_chrps_county/chrps_counties_dailyrainfall_2010_2018.csv")
+chrps_rainfall_2010_2018 <- read_csv("data/raw_data/ssd_chrps_county/chrps_counties_dailyrainfall_2010_2018.csv")
 
 rainfall_weekly <- chrps_rainfall_2010_2018 %>%
   mutate(Date = as.Date(dates,format="%m/%d/%Y",origin="1970-1-1"),
@@ -508,7 +509,7 @@ start_rainy <- chrps_rainfall_2010_2018 %>%
         summarize(start_rainy=min(Date),
                   cs=min(cs))
 
-p2 <- master_dat %>% filter(!is.na(firstcase)) %>%
+p2 <- firstcase %>% filter(!is.na(firstcase)) %>%
         left_join(mapdf,by="admin2Name")%>%
         left_join(start_rainy,by=c("admin2Pcod","year")) %>%
         mutate(diff=(firstcase-start_rainy)/7) %>%
@@ -569,9 +570,9 @@ Results from bayesian analysis to jointly estimate the serial interval and repro
 
 ```{r fs5, message=FALSE, echo=FALSE,warning=FALSE, fig.width = 10, fig.height= 10}
 
-#see explore GT for original file
-pdata <- read_csv("generated_data/pdata.csv")
-discreteDF<- read_csv("generated_data/discreteDF.csv")
+#see exploreGT.Rmd for original file
+pdata <- read_csv("data/generated_data/pdata.csv")
+discreteDF<- read_csv("data/generated_data/discreteDF.csv")
 
 p0 <- pdata%>% mutate(year=factor(year)) %>%
         ggplot(aes(x=R0,y=meanSI,col=year))+
@@ -592,7 +593,7 @@ p1<-discreteDF %>% filter(days>0) %>%
     scale_x_continuous(limits=c(0,10),breaks=0:10)+
     ylim(c(0,1))
 
-source("source/dlnm_FINAL.R")
+source("code/extra/dlnm_FINAL.R")
 
 final2015 <- CalcRt(Ser2015)
 final2016 <- CalcRt(Ser2016)
@@ -759,7 +760,7 @@ plot_grid(p3,p4,ncol=1,align="v")
 
 
 ```{r ts2, message=FALSE, echo=FALSE,warning=FALSE,fig.width = 7, fig.asp = 1.5}
-source("source/fig_movement.R")
+source("code/extra/fig_movement.R")
 
 ft <- final_d %>% group_by(countryOrigin,period) %>%
         summarize(count=sum(count)) %>%
@@ -776,6 +777,7 @@ ft[is.na(ft)] <- 0
 ft %>% flextable()%>% autofit()
 
 ```
+
 \pagebreak
 
 
@@ -804,13 +806,14 @@ final_d %>%
         ylab("State Assessed")
 
 ```
+
 \pagebreak
 
 ### Figure S8. International cross-border movement of individuals returning to South Sudan (A) and Incidence rates of cholera in neighboring countries (B)
 Geographic location is not known below the country level. Incidence rates calculated using WHO reports and population number from (https://population.un.org/wpp/DataQuery/). Though Sudan is believed to be endemic for cholera, but has not historically reported it to the WHO. Grey areas were not assessed by the IOM for migration.
 
 ```{r fs7, message=FALSE, echo=FALSE,warning=FALSE,fig.width = 10, fig.asp = 0.67}
-source("source/fig_movement.R")
+source("code/extra/fig_movement.R")
 
 k <- data.frame(country=c("Ethiopia",
                           "Kenya",
@@ -889,15 +892,44 @@ plot_grid(sf7a,sf7b,ncol=1, labels = c("A","B"),rel_heights = c(1,1))
 
 
 ```
+
 \pagebreak
 
 ### Figure S9. Analysis of cholera cases in the counties of South Sudan, Jan 2014 - Dec 2018
 Incidence and the proportion of weeks with cholera cases are shown for each cholera affected county. Both axes are square-root transformed.
 
 ```{r fs8, message=FALSE, echo=FALSE,warning=FALSE,fig.width = 10, fig.asp = 0.67}
-df<- read_rds("ssd_who_meeting.rds")
 
-p0 <- df %>% ggplot(aes(x=prop_weeks,
+map <- read_sf("data/raw_data/ssd_admbnda_adm2_200k_ssnbs_20160114.shp")
+
+worldpop_dat <- read_csv("data/raw_data/SSD15adjv3_tif+SSD-HDX-Borders_adm2_zonal.csv") %>%
+        select(admin1Name, admin2Name,SUM) %>%
+        rename(Pop = SUM,
+               state= admin1Name)
+df <- master_dat %>% mutate(
+        week = floor_date(onset_date_imp - 1, "weeks") + 1)%>%
+        mutate(admin2Name=recode(admin2Name,
+                                 Raja="Raga"))%>%
+        group_by(admin2Name,week) %>%
+        summarize(cases=n()) %>%
+        filter(!(is.na(admin2Name))) %>%
+        ungroup(week) %>%
+        group_by(admin2Name)%>%
+        summarize(cases=sum(cases),
+                  weeks=n())%>%
+        right_join(worldpop_dat, by="admin2Name") %>%
+        mutate(incidence=cases/Pop/5*1000,
+               prop_weeks=weeks/(365.25/7*5)*100) %>%
+        right_join(map, by="admin2Name")
+
+
+
+# df<- read_rds("ssd_who_meeting.rds")
+
+
+p0 <- df %>% filter(!is.na(admin2Name)) %>%
+            filter(!is.na(incidence))%>%
+        ggplot(aes(x=prop_weeks,
                   y=incidence,label=admin2Name))+
                 geom_point() +
                 ggrepel::geom_text_repel() +
@@ -931,6 +963,7 @@ p2<-df %>% ggplot(aes(geometry=geometry)) + geom_sf(aes(fill=prop_weeks),
 plot_grid(p0,plot_grid(p1,p2,nrow=1, align="v"),ncol=1,rel_heights = c(2,1))
 
 ```
+
 \pagebreak
 
 ### Figure S10. Monthly geographic distribution of suspected cholera cases in South Sudan, June 2016 - November 2017.
@@ -938,9 +971,8 @@ County borders are indicated in black. Light blue line represents the Nile river
 
 ```{r fs9, message=FALSE, echo=FALSE,warning=FALSE,fig.width = 8, fig.asp=1}
 #bring in data
-master_dat <- read_rds("generated_data/master_linelist_simp.rds")
-nile <- read_rds("data/nile_river/nile.rds")
-map <- read_sf("data/ssd_admbnda_adm2_200k_ssnbs_20160114.shp")
+nile <- read_rds("data/raw_data/nile_river/nile.rds")
+map <- read_sf("data/raw_data/ssd_admbnda_adm2_200k_ssnbs_20160114.shp")
 
 ob20162017<- master_dat %>%filter(year(onset_date) %in% c(2016,2017)) %>%
         mutate(yearmonth=format(as.Date(onset_date), "%Y-%m"))%>%
