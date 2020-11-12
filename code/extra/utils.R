@@ -55,7 +55,8 @@ load_and_clean_2014_data <- function(){
            epi_week = `Epi- Week`,
            died = `Outcome _1 1:Alive 2:Health Facility death 3:Community death`
            ) %>%
-    select(age,sex,state,county,payam, village,health_facility,visit_date,onset_date,epi_week,died)
+    mutate(culture_result=as.character(`Vibrio laboratory  culture result:         0: Not done      1: Positive       2: Negative    3: Pending`)) %>%
+    select(age,sex,state,county,payam, village,health_facility,visit_date,onset_date,epi_week,died,culture_result)
 
     ## clean age and sex
     m2014 <- m2014 %>% mutate(age = str_extract(age,'[0-9\\.]+') %>% as.numeric,
@@ -115,8 +116,10 @@ load_and_clean_2015_data <- function(){
         visit_date = `Date of visit at health facility        (DD-MM-YY)`,
         onset_date = `Date of onset    (DD-MM-YY)`,
         epi_week = `Epi- Week`,
-        died = `Outcome _1 1:Alive 2:Health Facility death 3:Community death`) %>%
-    select(id,age,sex,state,county,payam, village,health_facility,visit_date,onset_date,epi_week,died)
+        died = `Outcome _1 1:Alive 2:Health Facility death 3:Community death`
+        ) %>%
+    mutate(culture_result=as.character(`Vibrio laboratory  culture result:         0: Not done      1: Positive       2: Negative    3: Pending`))%>%
+    select(id,age,sex,state,county,payam, village,health_facility,visit_date,onset_date,epi_week,died,culture_result)
 
     ## clean age and sex
     m2015 <- m2015 %>% mutate(age = str_extract(age,'[0-9\\.]+') %>% as.numeric,
@@ -156,13 +159,16 @@ load_and_clean_2017_data <- function(){
         health_facility = health_facility,
         visit_date = date_visit_hf,
         onset_date = date_symp_onset ,
-        iso_week = isoweek) %>%
+        iso_week = isoweek
+        ) %>%
     mutate(
         id = row_number(),
         visit_date = as.Date(visit_date),
         onset_date = as.Date(onset_date),
-        died = ifelse(Alive_Died_ == "Died",1,0)) %>%
-    select(id,age,sex,county,payam, village,health_facility,visit_date,onset_date,iso_week,died)
+        died = ifelse(Alive_Died_ == "Died",1,0),
+        culture_result=as.character(lab_culture)
+        ) %>%
+    select(id,age,sex,county,payam, village,health_facility,visit_date,onset_date,iso_week,died,culture_result)
 
     ## clean sex (age is all good)
     m2017 <- m2017 %>% mutate(sex = str_to_upper(sex))

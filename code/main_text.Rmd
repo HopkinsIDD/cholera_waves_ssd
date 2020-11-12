@@ -19,12 +19,97 @@ reload_source()
 # dat_2017 <- load_and_clean_2017_data()%>% mutate(wave="2016/2017")
 # 
 # master_dat <- bind_rows(dat_2014,dat_2015,dat_2017)
-# 
-# missing <- filter(master_dat,is.na(onset_date_imp)|is.na(admin2Name)) %>%
-#               select(wave,onset_date_imp,admin2Name)
+
 # saveRDS(master_dat,file="data/generated_data/master_linelist_final.rds")
 
 master_dat <- read_rds("data/generated_data/master_linelist_final.rds") 
+missing <- filter(master_dat,is.na(onset_date_imp)|is.na(admin2Name)) %>%
+              select(wave,onset_date_imp,admin2Name)
+
+
+```
+
+## Abstract
+
+```{r abstract}
+
+table(master_dat$wave)
+
+#see results for comparison of attack rates and statistics on vaccination campaigns
+
+```
+
+
+## Methods 
+
+```{r}
+
+#districts used for iom data
+my_map <- read_sf("data/raw_data/ssd_admbnda_adm2_200k_ssnbs_20160114.shp") 
+
+#get iom dataset ready
+final_iomdata <- read_csv("data/generated_data/IOM_longdata.csv") %>%
+        #split 2015/2016 into two years (will re-add below)
+        mutate(number = ifelse(period=="2015/2016",number/2,number))
+
+final_iomdata <- final_iomdata %>% 
+        mutate(period = recode(period,
+                               `2013/2014` = "2014",
+                               `2015/2016` = "2015",
+                               `2017JanJun`="2017",
+                               `2017JulDec`="2017"
+                                )) %>%
+        # re-add 2016
+        bind_rows(filter(final_iomdata,period=="2015/2016")) %>%
+        mutate(period = recode(period,
+                               `2015/2016` = "2016")) %>%
+        #edit name of county
+        mutate(
+                origin=ifelse(countryOrigin=="South Sudan",countyOrigin,countryOrigin),
+                origin= ifelse(origin =="Aweil Center","Aweil Centre",origin),
+                origin= ifelse(origin =="Canal (Khorfulus)","Canal/Pigi",origin),
+                origin= ifelse(origin =="Ikwoto","Ikotos",origin),
+                origin= ifelse(origin =="Kajo-Keji","Kajo-keji",origin),
+                origin= ifelse(origin =="Luakpiny (Nasir)","Luakpiny/Nasir",origin),
+                origin= ifelse(origin =="Raja","Raga",origin),
+                origin= ifelse(origin =="Terkeka","Terekeka",origin),
+                
+                assess= countyAssessed,
+                assess= ifelse(assess =="Aweil Center","Aweil Centre",assess),
+                assess= ifelse(assess =="Canal (Khorfulus)","Canal/Pigi",assess),
+                assess= ifelse(assess =="Kajo-Keji","Kajo-keji",assess),
+                
+                count = number
+        ) %>% 
+        select(period,origin, assess,count,countryOrigin, admin2Pcod) %>% 
+        group_by(period,origin, assess,countryOrigin,admin2Pcod) %>%
+        summarize(count=sum(count))  %>% ungroup(period)%>%
+        filter(period!="2018JanApr" & count !=0)
+
+
+iom_counties <- unique(final_iomdata$assess)
+length(iom_counties)
+
+all_counties <- my_map$admin2Name
+length(all_counties)
+
+cholera_counties <- master_dat %>% 
+                        group_by(admin2Name) %>%
+                        summarize(cases=n()) %>%
+                        mutate(assessed=admin2Name %in% iom_counties) %>%
+                        filter(!is.na(admin2Name))
+
+
+
+cholera_counties %>% summarise(
+                        cholera_counties=n(),
+                        assessed_counties=sum(assessed),
+                        allcases=sum(cases),
+                        assessedcases=sum(cases*assessed),
+                        percent=assessedcases/allcases
+                               ) 
+
+
 
 
 ```
@@ -32,9 +117,31 @@ master_dat <- read_rds("data/generated_data/master_linelist_final.rds")
 
 ## Results
 
-### Waves
+```{r dates}
 
-```{r waves}
+#get dates of confirmed and suspect cases
+master_dat %>% filter(culture_result=="1") %>%
+        group_by(wave)%>%
+        summarize(first=min(onset_date_imp, na.rm = TRUE),
+                  last=max(onset_date_imp, na.rm = TRUE)
+                  )
+
+
+master_dat %>%
+        group_by(wave)%>%
+        summarize(first=min(onset_date_imp, na.rm = TRUE),
+                  last=max(onset_date_imp, na.rm = TRUE)
+                  )
+
+#first 1617 in Juba (weird case in Rubkhona)
+master_dat %>% filter(wave=="2016/2017")%>%
+        filter(admin2Name=="Juba")%>%
+        filter(onset_date_imp==min(onset_date_imp, na.rm = TRUE)) %>% select(onset_date_imp)
+
+```
+
+
+```{r wavessuspect}
 
 #number of cases and counties
 master_dat %>% group_by(wave)%>%
@@ -75,11 +182,7 @@ master_dat %>% group_by(wave,sex)%>%
                        percent=cases/total*100
                        )
 
-```
-
-```{r waves}
 #ayod
-
 master_dat %>% filter(admin2Name=="Ayod") %>%
         filter(wave=="2016/2017") %>%
         group_by(yr=year(onset_date_imp))%>%
@@ -93,6 +196,121 @@ master_dat %>% filter(admin2Name=="Ayod") %>%
 
 ```{r vaccination}
 
+#calculate attack rates by wave and outbreak
+worldpop_dat <- read_csv("data/raw_data/SSD15adjv3_tif+SSD-HDX-Borders_adm2_zonal.csv")
+
+
+masterfinal <- master_dat %>% mutate(year=ifelse(is.na(onset_date),format(visit_date, "%Y"),
+                     format(onset_date, "%Y"))) %>%
+        mutate( week = floor_date(onset_date_imp - 1, "weeks") + 1) %>%
+        group_by(week, admin2Name) %>%
+        summarize(cases=n()) %>%
+        filter(!is.na(week) & !(is.na(admin2Name))) %>%
+        mutate(yr=as.character(year(week)),
+               wave=ifelse(yr=="2016" | yr=="2017","2016/2017",yr))
+
+
+# calculate the peak week and last case for each wave
+last <- masterfinal %>%
+        group_by(admin2Name,wave) %>%
+        summarize(lastWk=max(week))
+
+peak <- masterfinal %>%
+        group_by(admin2Name,wave) %>%
+        filter(cases==max(cases)) %>%
+        select(admin2Name,wave,week,cases) %>%
+        arrange(week,admin2Name)%>%
+        rename(peakWk=week) %>%
+        group_by(admin2Name,wave) %>%
+        summarize(peakWk=mean(peakWk),
+                   cases=mean(cases))
+
+
+#bring in ocv data
+ocv_dat <- read_xlsx("data/raw_data/ocv_summary_south_sudan.xlsx",na = c("","?"))  %>%
+        rename(admin2Name = County,doses_r1 = `Doses administered 1st round`) %>%
+        mutate(date_r1 = as.Date(`Start\r\n1st round`,origin="1970-1-1"))%>%
+        mutate(doses_r2=as.numeric(`Doses administered 2nd round`))
+
+# Total doses
+sum(ocv_dat$doses_r1) +sum(ocv_dat$doses_r2,na.rm = TRUE)
+# of campaigns
+table(ocv_dat$Year)
+table(cholera_counties$admin2Name %in% unique(ocv_dat$admin2Name) )
+sum(ocv_dat$admin2Name=="Juba")
+#range of doses reached
+summary(ocv_dat$doses_r1)
+#administrative coverage (copy and paste into console)
+# summary(ocv_dat$`Admin coverage 
+# + 1st round`)
+
+ocv_dat <- ocv_dat%>%
+        left_join(worldpop_dat %>% select(admin2Name,SUM)) %>%
+        mutate(r1_coverage = doses_r1/SUM) %>% #calculate coverage
+        #assign waves to each campaign
+        select(No.,admin2Name,date_r1,r1_coverage) %>%
+        filter(!is.na(date_r1)) %>%
+        mutate(yr=as.character(year(date_r1)),
+               wave=ifelse(yr=="2016" | yr=="2017","2016/2017",yr))%>%
+        arrange(date_r1,admin2Name)%>%
+        #match with peak and last case data
+        left_join(peak, c("admin2Name","wave")) %>%
+        left_join(last, c("admin2Name","wave")) %>%
+        mutate(TTL=as.numeric(date_r1-lastWk),
+                TTP=as.numeric(date_r1-peakWk)) %>%
+        #label as juba vs not
+        select(No.,admin2Name,wave,date_r1,TTL,TTP,r1_coverage) %>%
+        mutate(County=ifelse(admin2Name=="Juba",
+                             "Juba",
+                             "Other Counties"))
+
+#coverage
+summary(ocv_dat$r1_coverage)
+
+#campaigns in areas with cholera cases
+sum(!is.na(ocv_dat$TTL))
+sum(ocv_dat$TTP<0,na.rm = TRUE)
+#assess time to peak and last case
+table(ocv_dat$wave,ocv_dat$TTP<0)
+table(ocv_dat$wave,ocv_dat$TTL>0)
+
+
+#limit analysis to campaigns with AR, date and has the highest coverage
+ocv_dat2<- ocv_dat %>%
+        group_by(admin2Name,wave) %>% #summarize(TTP=min(TTP)) %>%
+        filter(r1_coverage==max(r1_coverage))%>%
+        filter(!is.na(TTP))
+
+ardf <- master_dat %>%  group_by(wave, admin2Name) %>%
+                        summarize(cases=n()) %>%
+                        filter(!(is.na(admin2Name)))%>%
+        left_join(select(worldpop_dat,admin2Name,SUM))%>%
+        mutate(ARpercent=cases/SUM*100)
+
+
+
+ardf2 <- ardf %>% left_join(ocv_dat2) %>%
+        mutate(BeforePeak=ifelse(TTP<0,"Before Peak","After Peak"),
+               BeforePeak=ifelse(is.na(TTP),"No Campaign",BeforePeak))
+
+
+ardf2 %>% ggplot(aes(x=BeforePeak,y=ARpercent,col=admin2Name=="Juba"))+
+        geom_jitter(height=0)+
+        scale_y_continuous(trans="log10")+xlab("Timing")+
+        ylab("AR (%)")
+
+fit1 <-ardf2 %>% #filter(admin2Name!="Juba") %>%
+        glm(data=., cases ~BeforePeak + offset(log(SUM)),family=poisson)
+
+
+exp(-fit1$coefficients)
+exp(-confint(fit1))
+
+fit2 <-ardf2 %>% #filter(admin2Name!="Juba") %>%
+        glm(data=., cases ~BeforePeak +r1_coverage + wave+ offset(log(SUM)),family=poisson)
+
+exp(-fit2$coefficients)
+exp(-confint(fit2))
 
 
 ```
