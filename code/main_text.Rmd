@@ -520,13 +520,13 @@ final_iomdata %>% filter(origin=="Juba") %>%
 ```
 
 
-### Discussion
+## Discussion
 
 ```{r}
 
 
 sum(reactive$doses_r1+reactive$doses_r2,na.rm = TRUE)
-reactive %>% filter(TTP<=6)%>%
+reactive %>% filter(TTP<0)%>%
         summarize(sum(doses_r1+doses_r2,na.rm = TRUE))
 
 
