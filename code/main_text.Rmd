@@ -199,21 +199,46 @@ master_dat %>% filter(admin2Name=="Ayod") %>%
 #calculate attack rates by wave and outbreak
 worldpop_dat <- read_csv("data/raw_data/SSD15adjv3_tif+SSD-HDX-Borders_adm2_zonal.csv")
 
-
-masterfinal <- master_dat %>% mutate(year=ifelse(is.na(onset_date),format(visit_date, "%Y"),
-                     format(onset_date, "%Y"))) %>%
+masterfinal <- master_dat %>% 
         mutate( week = floor_date(onset_date_imp - 1, "weeks") + 1) %>%
-        group_by(week, admin2Name) %>%
+        group_by(wave,week, admin2Name) %>%
         summarize(cases=n()) %>%
-        filter(!is.na(week) & !(is.na(admin2Name))) %>%
-        mutate(yr=as.character(year(week)),
-               wave=ifelse(yr=="2016" | yr=="2017","2016/2017",yr))
+        filter(!is.na(week) & !(is.na(admin2Name))) 
+
+# masterfinal <- master_dat %>% mutate(year=ifelse(is.na(onset_date),format(visit_date, "%Y"),
+#                      format(onset_date, "%Y"))) %>%
+#         mutate( week = floor_date(onset_date_imp - 1, "weeks") + 1) %>%
+#         group_by(week, admin2Name) %>%
+#         summarize(cases=n()) %>%
+#         filter(!is.na(week) & !(is.na(admin2Name))) %>%
+#         mutate(yr=as.character(year(week)),
+#                wave=ifelse(yr=="2016" | yr=="2017","2016/2017",yr))
+
 
 
 # calculate the peak week and last case for each wave
-last <- masterfinal %>%
+
+first <- master_dat %>% group_by(admin2Name,wave)%>%
+              summarize(fdate=min(onset_date_imp,na.rm = TRUE)) 
+
+last <- master_dat %>%
         group_by(admin2Name,wave) %>%
-        summarize(lastWk=max(week))
+        summarize(ldate=max(onset_date_imp,na.rm = TRUE))
+
+# last <- masterfinal %>%
+#         group_by(admin2Name,wave) %>%
+#         summarize(lastWk=max(week))
+
+
+peak <- masterfinal %>%
+        group_by(admin2Name,wave) %>%
+        filter(cases==max(cases)) %>%
+        select(admin2Name,wave,week,cases) %>%
+        arrange(week,admin2Name)%>%
+        rename(peakWk=week) %>%
+        group_by(admin2Name,wave) %>%
+        summarize(peakWk=mean(peakWk),
+                   cases=mean(cases))
 
 peak <- masterfinal %>%
         group_by(admin2Name,wave) %>%
@@ -256,36 +281,80 @@ ocv_dat <- ocv_dat%>%
         #match with peak and last case data
         left_join(peak, c("admin2Name","wave")) %>%
         left_join(last, c("admin2Name","wave")) %>%
-        mutate(TTL=as.numeric(date_r1-lastWk),
+        mutate(TTL=as.numeric(date_r1-ldate),
                 TTP=as.numeric(date_r1-peakWk)) %>%
         #label as juba vs not
         select(No.,admin2Name,wave,date_r1,TTL,TTP,r1_coverage) %>%
         mutate(County=ifelse(admin2Name=="Juba",
                              "Juba",
-                             "Other Counties"))
+                             "Other Counties")) %>%
+        left_join(first,by=c("admin2Name","wave")) 
+
 
 #coverage
 summary(ocv_dat$r1_coverage)
 
+reactive <- ocv_dat %>% filter(date_r1>fdate)
 #campaigns in areas with cholera cases
-sum(!is.na(ocv_dat$TTL))
-sum(ocv_dat$TTP<0,na.rm = TRUE)
+nrow(reactive)
+filter(reactive,TTP<0)
+sum(reactive$TTP<0,na.rm = TRUE)
 #assess time to peak and last case
 table(ocv_dat$wave,ocv_dat$TTP<0)
 table(ocv_dat$wave,ocv_dat$TTL>0)
 
 
-#limit analysis to campaigns with AR, date and has the highest coverage
+# #limit analysis to campaigns with AR, date and has the highest coverage
+# ocv_dat2<- ocv_dat %>%
+#         group_by(admin2Name,wave) %>% #summarize(TTP=min(TTP)) %>%
+#         filter(r1_coverage==max(r1_coverage))%>%
+#         filter(!is.na(TTP))
+# 
+# ardf <- master_dat %>%  group_by(wave, admin2Name) %>%
+#                         summarize(cases=n()) %>%
+#                         filter(!(is.na(admin2Name)))%>%
+#         left_join(select(worldpop_dat,admin2Name,SUM))%>%
+#         mutate(ARpercent=cases/SUM*100)
+# 
+# 
+# 
+# ardf2 <- ardf %>% left_join(ocv_dat2) %>%
+#         mutate(BeforePeak=ifelse(TTP<0,"Before Peak","After Peak"),
+#                BeforePeak=ifelse(is.na(TTP),"No Campaign",BeforePeak))
+# 
+# 
+# ardf2 %>% ggplot(aes(x=BeforePeak,y=ARpercent,col=admin2Name=="Juba"))+
+#         geom_jitter(height=0)+
+#         scale_y_continuous(trans="log10")+xlab("Timing")+
+#         ylab("AR (%)")
+# 
+# fit1 <-ardf2 %>% #filter(admin2Name!="Juba") %>%
+#         glm(data=., cases ~BeforePeak + offset(log(SUM)),family=poisson)
+# 
+# 
+# exp(-fit1$coefficients)
+# exp(-confint(fit1))
+# 
+# fit2 <-ardf2 %>% #filter(admin2Name!="Juba") %>%
+#         glm(data=., cases ~BeforePeak +r1_coverage + wave+ offset(log(SUM)),family=poisson)
+# 
+# exp(-fit2$coefficients)
+# exp(-confint(fit2))
+
+
+####OLD CODE
+
+ardf <- masterfinal %>%
+        group_by(admin2Name,wave) %>%
+        summarize(cases=n()) %>%
+        left_join(select(worldpop_dat,admin2Name,SUM))%>%
+        mutate(ARpercent=cases/SUM*100)
+
+
 ocv_dat2<- ocv_dat %>%
         group_by(admin2Name,wave) %>% #summarize(TTP=min(TTP)) %>%
         filter(r1_coverage==max(r1_coverage))%>%
         filter(!is.na(TTP))
-
-ardf <- master_dat %>%  group_by(wave, admin2Name) %>%
-                        summarize(cases=n()) %>%
-                        filter(!(is.na(admin2Name)))%>%
-        left_join(select(worldpop_dat,admin2Name,SUM))%>%
-        mutate(ARpercent=cases/SUM*100)
 
 
 
@@ -299,28 +368,13 @@ ardf2 %>% ggplot(aes(x=BeforePeak,y=ARpercent,col=admin2Name=="Juba"))+
         scale_y_continuous(trans="log10")+xlab("Timing")+
         ylab("AR (%)")
 
-fit1 <-ardf2 %>% #filter(admin2Name!="Juba") %>%
-        glm(data=., cases ~BeforePeak + offset(log(SUM)),family=poisson)
+fit <-ardf2 %>% #filter(admin2Name!="Juba") %>%
+        glm(data=., cases ~BeforePeak +offset(log(SUM)),family=poisson)
 
 
-exp(-fit1$coefficients)
-exp(-confint(fit1))
+exp(-fit$coefficients)
 
-fit2 <-ardf2 %>% #filter(admin2Name!="Juba") %>%
-        glm(data=., cases ~BeforePeak +r1_coverage + wave+ offset(log(SUM)),family=poisson)
-
-exp(-fit2$coefficients)
-exp(-confint(fit2))
-
-
-```
-
-
-### Molecular Analyses
-
-```{r molecular}
-
-
+exp(-confint(fit))
 
 ```
 
@@ -329,7 +383,29 @@ exp(-confint(fit2))
 
 ```{r precipitation}
 
+chrps_rainfall_2010_2018 <- read_csv("data/raw_data/ssd_chrps_county/chrps_counties_dailyrainfall_2010_2018.csv")
 
+mapdf <- as.data.frame(read_sf("data/raw_data/ssd_admbnda_adm2_200k_ssnbs_20160114.shp")) %>%
+        select(admin2Name,admin2Pcod)
+
+rainfall_daily <- chrps_rainfall_2010_2018 %>%
+  mutate(Date = as.Date(dates,format="%m/%d/%Y",origin="1970-1-1"),
+         week = floor_date(Date - 1, "weeks") + 1) %>%
+          left_join(mapdf, by="admin2Pcod") %>%
+        mutate(month=month(Date)) %>%
+        mutate(rainy= (month %in% c(4:11)))
+
+
+
+rainfall_daily %>% filter(admin2Name=="Juba") %>%
+        group_by(rainy)%>%
+        summarize(precip=sum(avgDailyRainfall))%>%
+        mutate(   percent=precip/sum(precip))
+
+rainfall_daily %>% 
+        group_by(rainy)%>%
+        summarize(precip=sum(avgDailyRainfall))%>%
+        mutate(   percent=precip/sum(precip))
 
 ```
 
@@ -338,15 +414,14 @@ exp(-confint(fit2))
 
 ```{r displacement}
 
+final_iomdata %>% filter(origin=="Juba") %>%
+        group_by(period) %>%
+        summarize(count=sum(count))
 
-
-```
-
-
-## Discussion
-
-```{r discussion}
+(7234-4217)/7234
 
 
 
 ```
+
+
