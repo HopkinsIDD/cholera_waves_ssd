@@ -1,11 +1,16 @@
 ---
 title: "Main Text Statistics"
-output: html_document
+output:  
+      html_document: 
+                toc: true
+                toc_depth: 3
+                toc_float: true
+
 ---
 
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE,message = FALSE,warning = FALSE)
 ```
 
 ### Load Libraries and data
@@ -42,7 +47,7 @@ table(master_dat$wave)
 
 ## Methods 
 
-```{r}
+```{r iomdata}
 
 #districts used for iom data
 my_map <- read_sf("data/raw_data/ssd_admbnda_adm2_200k_ssnbs_20160114.shp") 
@@ -51,7 +56,6 @@ my_map <- read_sf("data/raw_data/ssd_admbnda_adm2_200k_ssnbs_20160114.shp")
 final_iomdata <- read_csv("data/generated_data/IOM_longdata.csv") %>%
         #split 2015/2016 into two years (will re-add below)
         mutate(number = ifelse(period=="2015/2016",number/2,number))
-
 final_iomdata <- final_iomdata %>% 
         mutate(period = recode(period,
                                `2013/2014` = "2014",
@@ -87,20 +91,17 @@ final_iomdata <- final_iomdata %>%
         filter(period!="2018JanApr" & count !=0)
 
 
+#counties in the iom dataset
 iom_counties <- unique(final_iomdata$assess)
-length(iom_counties)
-
 all_counties <- my_map$admin2Name
-length(all_counties)
+table(all_counties %in% iom_counties)
 
+#counties affected by cholera
 cholera_counties <- master_dat %>% 
                         group_by(admin2Name) %>%
                         summarize(cases=n()) %>%
                         mutate(assessed=admin2Name %in% iom_counties) %>%
                         filter(!is.na(admin2Name))
-
-
-
 cholera_counties %>% summarise(
                         cholera_counties=n(),
                         assessed_counties=sum(assessed),
@@ -110,38 +111,23 @@ cholera_counties %>% summarise(
                                ) 
 
 
-
-
 ```
-
 
 ## Results
 
+See table 1 for county and state specific results per wave
+
+
 ```{r dates}
 
-#get dates of confirmed and suspect cases
+#OVERALL
+
+#get dates of confirmed cases
 master_dat %>% filter(culture_result=="1") %>%
         group_by(wave)%>%
         summarize(first=min(onset_date_imp, na.rm = TRUE),
                   last=max(onset_date_imp, na.rm = TRUE)
                   )
-
-
-master_dat %>%
-        group_by(wave)%>%
-        summarize(first=min(onset_date_imp, na.rm = TRUE),
-                  last=max(onset_date_imp, na.rm = TRUE)
-                  )
-
-#first 1617 in Juba (weird case in Rubkhona)
-master_dat %>% filter(wave=="2016/2017")%>%
-        filter(admin2Name=="Juba")%>%
-        filter(onset_date_imp==min(onset_date_imp, na.rm = TRUE)) %>% select(onset_date_imp)
-
-```
-
-
-```{r wavessuspect}
 
 #number of cases and counties
 master_dat %>% group_by(wave)%>%
@@ -151,10 +137,9 @@ master_dat %>% group_by(wave)%>%
                                 deaths=sum(died,na.rm = TRUE),
                                 min=min(onset_date_imp,na.rm = TRUE),
                                 max=max(onset_date_imp,na.rm = TRUE),
-                                diff=round((max-min)/7,1)
+                                diff=round(as.numeric(max-min)/7,1)
                           ) %>%
-                mutate( btw=(min-lag(max,1))/7)
-
+                mutate( btw=round(as.numeric(min-lag(max,1))/7,1))
 
 #cases missing in the table
 master_dat %>% filter(is.na(admin2Name)) %>%
@@ -182,13 +167,44 @@ master_dat %>% group_by(wave,sex)%>%
                        percent=cases/total*100
                        )
 
+
+# 2014
+# upper nile state
+table(filter(master_dat,state=="UNS" & wave=="2014")$admin2Name)
+
+
+#2015
+
+filter(master_dat, admin2Name=="Juba" & wave=="2015") %>%
+          summarize(cases=n(),
+                    percent=cases/1818,
+                    first=min(onset_date_imp,na.rm = TRUE),
+                    last=max(onset_date_imp,na.rm = TRUE)
+                    )
+
+
+# 2016 & 2017
+#first caese in Juba (weird case in Rubkhona)
+master_dat %>% filter(wave=="2016/2017")%>%
+        filter(admin2Name=="Juba")%>%
+        filter(onset_date_imp==min(onset_date_imp, na.rm = TRUE)) %>% select(onset_date_imp)
+
+
+
 #ayod
-master_dat %>% filter(admin2Name=="Ayod") %>%
-        filter(wave=="2016/2017") %>%
-        group_by(yr=year(onset_date_imp))%>%
-        summarize(count=n(),
-                 min= min(onset_date_imp),
-                 max=max(onset_date_imp))
+ayod <- master_dat %>% filter(admin2Name=="Ayod") %>%
+        filter(wave=="2016/2017") 
+ayod %>%        summarize(count=n(),
+                  deaths=sum(died),
+                 min= min(onset_date_imp,na.rm = TRUE),
+                 max=max(onset_date_imp,na.rm = TRUE),
+                 count/(as.numeric(max-min)/7)
+                 )
+
+ayod %>% group_by(isoweek(onset_date_imp)) %>%
+          mutate( week = floor_date(onset_date_imp - 1, "weeks") + 1) %>%
+          summarize(count=n())
+# 1595+1284+397
 
 ```
 
@@ -196,8 +212,16 @@ master_dat %>% filter(admin2Name=="Ayod") %>%
 
 ```{r vaccination}
 
-#calculate attack rates by wave and outbreak
+#bring in weekly cases and pop
 worldpop_dat <- read_csv("data/raw_data/SSD15adjv3_tif+SSD-HDX-Borders_adm2_zonal.csv")
+
+# calculate the first week and last case for each wave
+first <- master_dat %>% group_by(admin2Name,wave)%>%
+             summarize(fdate=min(onset_date_imp,na.rm = TRUE)) 
+
+last <- master_dat %>%
+        group_by(admin2Name,wave) %>%
+        summarize(ldate=max(onset_date_imp,na.rm = TRUE))
 
 masterfinal <- master_dat %>% 
         mutate( week = floor_date(onset_date_imp - 1, "weeks") + 1) %>%
@@ -205,31 +229,6 @@ masterfinal <- master_dat %>%
         summarize(cases=n()) %>%
         filter(!is.na(week) & !(is.na(admin2Name))) 
 
-# masterfinal <- master_dat %>% mutate(year=ifelse(is.na(onset_date),format(visit_date, "%Y"),
-#                      format(onset_date, "%Y"))) %>%
-#         mutate( week = floor_date(onset_date_imp - 1, "weeks") + 1) %>%
-#         group_by(week, admin2Name) %>%
-#         summarize(cases=n()) %>%
-#         filter(!is.na(week) & !(is.na(admin2Name))) %>%
-#         mutate(yr=as.character(year(week)),
-#                wave=ifelse(yr=="2016" | yr=="2017","2016/2017",yr))
-
-
-
-# calculate the peak week and last case for each wave
-
-first <- master_dat %>% group_by(admin2Name,wave)%>%
-              summarize(fdate=min(onset_date_imp,na.rm = TRUE)) 
-
-last <- master_dat %>%
-        group_by(admin2Name,wave) %>%
-        summarize(ldate=max(onset_date_imp,na.rm = TRUE))
-
-# last <- masterfinal %>%
-#         group_by(admin2Name,wave) %>%
-#         summarize(lastWk=max(week))
-
-
 peak <- masterfinal %>%
         group_by(admin2Name,wave) %>%
         filter(cases==max(cases)) %>%
@@ -239,39 +238,39 @@ peak <- masterfinal %>%
         group_by(admin2Name,wave) %>%
         summarize(peakWk=mean(peakWk),
                    cases=mean(cases))
-
-peak <- masterfinal %>%
-        group_by(admin2Name,wave) %>%
-        filter(cases==max(cases)) %>%
-        select(admin2Name,wave,week,cases) %>%
-        arrange(week,admin2Name)%>%
-        rename(peakWk=week) %>%
-        group_by(admin2Name,wave) %>%
-        summarize(peakWk=mean(peakWk),
-                   cases=mean(cases))
-
 
 #bring in ocv data
 ocv_dat <- read_xlsx("data/raw_data/ocv_summary_south_sudan.xlsx",na = c("","?"))  %>%
         rename(admin2Name = County,doses_r1 = `Doses administered 1st round`) %>%
         mutate(date_r1 = as.Date(`Start\r\n1st round`,origin="1970-1-1"))%>%
-        mutate(doses_r2=as.numeric(`Doses administered 2nd round`))
+        mutate(doses_r2=as.numeric(`Doses administered 2nd round`))%>%
+        #calculate coverage
+        left_join(worldpop_dat %>% select(admin2Name,SUM)) %>%
+        mutate(r1_coverage = doses_r1/SUM) 
+
+
+#########PARAGRAPH: In addition to case management, surveillance, and WASH intervention.....
 
 # Total doses
 sum(ocv_dat$doses_r1) +sum(ocv_dat$doses_r2,na.rm = TRUE)
 # of campaigns
-table(ocv_dat$Year)
+nrow(ocv_dat)
+table(ocv_dat$Year,useNA = "always")
+#of cholera counties with campaigns
 table(cholera_counties$admin2Name %in% unique(ocv_dat$admin2Name) )
 sum(ocv_dat$admin2Name=="Juba")
 #range of doses reached
 summary(ocv_dat$doses_r1)
 #administrative coverage (copy and paste into console)
-# summary(ocv_dat$`Admin coverage 
-# + 1st round`)
+summary(ocv_dat$`Admin coverage \r\n1st round`)
+#county level coverage
+summary(ocv_dat$r1_coverage)
 
-ocv_dat <- ocv_dat%>%
-        left_join(worldpop_dat %>% select(admin2Name,SUM)) %>%
-        mutate(r1_coverage = doses_r1/SUM) %>% #calculate coverage
+
+#########
+
+#prep OCV data for additional calculations
+ocv_dat <- ocv_dat%>% 
         #assign waves to each campaign
         select(No.,admin2Name,date_r1,r1_coverage) %>%
         filter(!is.na(date_r1)) %>%
@@ -281,6 +280,7 @@ ocv_dat <- ocv_dat%>%
         #match with peak and last case data
         left_join(peak, c("admin2Name","wave")) %>%
         left_join(last, c("admin2Name","wave")) %>%
+        ## TTL time to last case, TTP time to start of peak week
         mutate(TTL=as.numeric(date_r1-ldate),
                 TTP=as.numeric(date_r1-peakWk)) %>%
         #label as juba vs not
@@ -288,22 +288,97 @@ ocv_dat <- ocv_dat%>%
         mutate(County=ifelse(admin2Name=="Juba",
                              "Juba",
                              "Other Counties")) %>%
+        #match with first case
         left_join(first,by=c("admin2Name","wave")) 
 
 
-#coverage
-summary(ocv_dat$r1_coverage)
 
-reactive <- ocv_dat %>% filter(date_r1>fdate)
+#reactive campaigns
+reactive <- ocv_dat %>% filter(date_r1>=fdate)
+
+#########PARAGRAPH: Among 25 campaigns conducted reactively (ie, in response to cases)..
+
 #campaigns in areas with cholera cases
 nrow(reactive)
-filter(reactive,TTP<0)
-sum(reactive$TTP<0,na.rm = TRUE)
-#assess time to peak and last case
-table(ocv_dat$wave,ocv_dat$TTP<0)
+filter(reactive,TTP<=6)
+sum(reactive$TTP<=6,na.rm = TRUE)
+
+#assess how many campaigns occurred before the peak
+table(reactive$wave,reactive$TTP<=6)
+# table(ocv_dat$wave,ocv_dat$TTP<=6)
+
+# assess how many campaigns occurred after the last case
+# table(reactive$wave,reactive$TTL>0)
 table(ocv_dat$wave,ocv_dat$TTL>0)
 
 
+# All five counties with vaccination campaigns in 2014 or 2015
+# reported cases during the 2016–17 wave
+vacc1415 <- ocv_dat %>% filter(wave %in% c(2014,2015)) %>% distinct(admin2Name)
+chol1617 <- filter(master_dat,wave=="2016/2017") %>% distinct(admin2Name)
+nrow(vacc1415)
+vacc1415$admin2Name %in% chol1617$admin2Name
+
+
+#calculate the attack rate
+ardf <- master_dat %>% #masterfinal %>%  
+        group_by(admin2Name,wave) %>%
+        summarize(cases=n()) %>%
+        left_join(select(worldpop_dat,admin2Name,SUM))%>%
+        mutate(ARpercent=cases/SUM*100)%>%
+        filter(!is.na(admin2Name))
+
+#for each campaign
+ocv_dat2<- ocv_dat %>%
+        group_by(admin2Name,wave) %>%
+        filter(date_r1==min(date_r1))%>%
+        filter(r1_coverage==sum(r1_coverage))%>%
+        filter(!is.na(TTP))
+
+
+#choose which outbreaks had an OCV campaign before or after the campaign
+ardf2 <- ardf %>% left_join(ocv_dat2) %>%
+        mutate(BeforePeak=ifelse(TTP<0,"Before Peak","After Peak"),
+               BeforePeak=ifelse(is.na(TTP),"No Campaign",BeforePeak))
+
+#calculate the raw ARR
+ardf2 %>% group_by(BeforePeak) %>%
+          summarize(cases=sum(cases),
+                    pop=sum(SUM),
+                    AR=cases/pop
+                    ) %>%
+          mutate(first(AR)/AR)
+
+#graphic
+ardf2 %>% ggplot(aes(x=BeforePeak,y=ARpercent,col=admin2Name=="Juba"))+
+        geom_jitter(height=0,alpha=0.7)+
+        scale_y_continuous(trans="log10")+xlab("Timing")+
+        ylab("AR (%)")
+
+#fit 1: Compare before and after peak (include peak week as after)
+fit1 <-ardf2 %>% 
+        glm(data=., cases ~BeforePeak +offset(log(SUM)),family=poisson)
+exp(-fit1$coefficients)
+exp(-confint(fit1))
+
+#fit 2: Compare before and after peak controlling for coverage and wave
+fit2 <-ardf2 %>% 
+        glm(data=., cases ~BeforePeak +r1_coverage + wave+offset(log(SUM)),family=poisson)
+exp(-fit2$coefficients)
+exp(-confint(fit2))
+
+#fit 3: Compare before and after peak (include peak week as before)
+ardf3 <- ardf %>% left_join(ocv_dat2) %>%
+        mutate(BeforePeak=ifelse(TTP<=6,"Before Peak","After Peak"),
+               BeforePeak=ifelse(is.na(TTP),"No Campaign",BeforePeak))
+
+fit3 <-ardf3 %>% 
+        glm(data=., cases ~BeforePeak +offset(log(SUM)),family=poisson)
+exp(-fit3$coefficients)
+exp(-confint(fit3))
+
+
+####OLD CODE
 # #limit analysis to campaigns with AR, date and has the highest coverage
 # ocv_dat2<- ocv_dat %>%
 #         group_by(admin2Name,wave) %>% #summarize(TTP=min(TTP)) %>%
@@ -342,39 +417,7 @@ table(ocv_dat$wave,ocv_dat$TTL>0)
 # exp(-confint(fit2))
 
 
-####OLD CODE
 
-ardf <- masterfinal %>%
-        group_by(admin2Name,wave) %>%
-        summarize(cases=n()) %>%
-        left_join(select(worldpop_dat,admin2Name,SUM))%>%
-        mutate(ARpercent=cases/SUM*100)
-
-
-ocv_dat2<- ocv_dat %>%
-        group_by(admin2Name,wave) %>% #summarize(TTP=min(TTP)) %>%
-        filter(r1_coverage==max(r1_coverage))%>%
-        filter(!is.na(TTP))
-
-
-
-ardf2 <- ardf %>% left_join(ocv_dat2) %>%
-        mutate(BeforePeak=ifelse(TTP<0,"Before Peak","After Peak"),
-               BeforePeak=ifelse(is.na(TTP),"No Campaign",BeforePeak))
-
-
-ardf2 %>% ggplot(aes(x=BeforePeak,y=ARpercent,col=admin2Name=="Juba"))+
-        geom_jitter(height=0)+
-        scale_y_continuous(trans="log10")+xlab("Timing")+
-        ylab("AR (%)")
-
-fit <-ardf2 %>% #filter(admin2Name!="Juba") %>%
-        glm(data=., cases ~BeforePeak +offset(log(SUM)),family=poisson)
-
-
-exp(-fit$coefficients)
-
-exp(-confint(fit))
 
 ```
 
@@ -406,6 +449,51 @@ rainfall_daily %>%
         group_by(rainy)%>%
         summarize(precip=sum(avgDailyRainfall))%>%
         mutate(   percent=precip/sum(precip))
+
+```
+
+### MLVA
+
+```{r}
+
+mlva_resistance <- read_csv("data/raw_data/mlva_resistance_mlq.csv") %>%
+  rename(sampleID = `N?CNRVC`)
+
+#MLVA dataframe
+mlva_ssd <- mlva_resistance %>%
+  filter(Country == "South Sudan") %>%
+  rename(year = `Isolation Year`) %>%
+  select(sampleID, year,
+         MLVA_VC0147,
+         MLVA_VC0437,
+         MLVA_VC1457,
+         MLVA_VC1650,
+         MLVA_VCA0171,
+         MLVA_VCA0283) %>%
+  #reference id
+  mutate(
+    MLVA_VC0147 = MLVA_VC0147 -10 ,
+    MLVA_VC0437 = MLVA_VC0437 - 7,
+    MLVA_VC1457 = MLVA_VC1457 - 3,
+    MLVA_VC1650 = MLVA_VC1650 - 7,
+    MLVA_VCA0171 = MLVA_VCA0171 - 10,
+    MLVA_VCA0283 = MLVA_VCA0283 - 18
+  ) %>%
+  rename(
+    VC0147 = MLVA_VC0147 ,
+    VC0437 = MLVA_VC0437,
+    VC1457 = MLVA_VC1457 ,
+    VC1650 = MLVA_VC1650,
+    VCA0171 = MLVA_VCA0171,
+    VCA0283 = MLVA_VCA0283
+  ) %>%
+  gather(site, distance, -c(sampleID,year)) %>%
+  mutate(sampleID = factor(sampleID),
+         distance = factor(distance))
+
+
+distinct(mlva_ssd,sampleID,year) %>% group_by(year) %>%
+          summarize(n())
 
 ```
 

@@ -774,7 +774,8 @@ ft <- final_d %>% group_by(countryOrigin,period) %>%
 ft[is.na(ft)] <- 0
 
 
-ft %>% flextable()%>% autofit()
+ft %>% mutate(Total=`2014`+`2015`+`2016`+`2017`) %>%
+  flextable()%>% autofit()
 
 ```
 
