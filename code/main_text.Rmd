@@ -212,6 +212,8 @@ ayod %>% group_by(isoweek(onset_date_imp)) %>%
 
 ```{r vaccination}
 
+
+
 #bring in weekly cases and pop
 worldpop_dat <- read_csv("data/raw_data/SSD15adjv3_tif+SSD-HDX-Borders_adm2_zonal.csv")
 
@@ -246,7 +248,7 @@ ocv_dat <- read_xlsx("data/raw_data/ocv_summary_south_sudan.xlsx",na = c("","?")
         mutate(doses_r2=as.numeric(`Doses administered 2nd round`))%>%
         #calculate coverage
         left_join(worldpop_dat %>% select(admin2Name,SUM)) %>%
-        mutate(r1_coverage = doses_r1/SUM) 
+        mutate(r1_coverage = doses_r1/SUM)
 
 
 #########PARAGRAPH: In addition to case management, surveillance, and WASH intervention.....
@@ -267,12 +269,15 @@ summary(ocv_dat$`Admin coverage \r\n1st round`)
 summary(ocv_dat$r1_coverage)
 
 
+
+
+
 #########
 
 #prep OCV data for additional calculations
 ocv_dat <- ocv_dat%>% 
         #assign waves to each campaign
-        select(No.,admin2Name,date_r1,r1_coverage) %>%
+        # select(No.,admin2Name,date_r1,r1_coverage) %>%
         filter(!is.na(date_r1)) %>%
         mutate(yr=as.character(year(date_r1)),
                wave=ifelse(yr=="2016" | yr=="2017","2016/2017",yr))%>%
@@ -284,32 +289,33 @@ ocv_dat <- ocv_dat%>%
         mutate(TTL=as.numeric(date_r1-ldate),
                 TTP=as.numeric(date_r1-peakWk)) %>%
         #label as juba vs not
-        select(No.,admin2Name,wave,date_r1,TTL,TTP,r1_coverage) %>%
+        # select(No.,admin2Name,wave,date_r1,TTL,TTP,r1_coverage) %>%
         mutate(County=ifelse(admin2Name=="Juba",
                              "Juba",
-                             "Other Counties")) %>%
+                             "Other Counties"))  %>%
         #match with first case
-        left_join(first,by=c("admin2Name","wave")) 
+        left_join(first,by=c("admin2Name","wave"))
 
 
 
-#reactive campaigns
-reactive <- ocv_dat %>% filter(date_r1>=fdate)
+
 
 #########PARAGRAPH: Among 25 campaigns conducted reactively (ie, in response to cases)..
 
+#reactive campaigns
+reactive <- ocv_dat %>% filter(date_r1>=fdate)
 #campaigns in areas with cholera cases
 nrow(reactive)
 filter(reactive,TTP<=6)
 sum(reactive$TTP<=6,na.rm = TRUE)
-
 #assess how many campaigns occurred before the peak
 table(reactive$wave,reactive$TTP<=6)
-# table(ocv_dat$wave,ocv_dat$TTP<=6)
+table(ocv_dat$TTP<0) #for the abstract
 
 # assess how many campaigns occurred after the last case
 # table(reactive$wave,reactive$TTL>0)
 table(ocv_dat$wave,ocv_dat$TTL>0)
+
 
 
 # All five counties with vaccination campaigns in 2014 or 2015
@@ -333,11 +339,12 @@ ocv_dat2<- ocv_dat %>%
         group_by(admin2Name,wave) %>%
         filter(date_r1==min(date_r1))%>%
         filter(r1_coverage==sum(r1_coverage))%>%
-        filter(!is.na(TTP))
+        filter(!is.na(TTP))  %>%
+        select(-cases,-SUM)
 
 
 #choose which outbreaks had an OCV campaign before or after the campaign
-ardf2 <- ardf %>% left_join(ocv_dat2) %>%
+ardf2 <- ardf %>% left_join(ocv_dat2, by=c("admin2Name","wave")) %>%
         mutate(BeforePeak=ifelse(TTP<0,"Before Peak","After Peak"),
                BeforePeak=ifelse(is.na(TTP),"No Campaign",BeforePeak))
 
@@ -507,6 +514,23 @@ final_iomdata %>% filter(origin=="Juba") %>%
         summarize(count=sum(count))
 
 (7234-4217)/7234
+
+
+
+```
+
+
+### Discussion
+
+```{r}
+
+
+sum(reactive$doses_r1+reactive$doses_r2,na.rm = TRUE)
+reactive %>% filter(TTP<=6)%>%
+        summarize(sum(doses_r1+doses_r2,na.rm = TRUE))
+
+
+round(100*73882 / 1805452,1)
 
 
 
