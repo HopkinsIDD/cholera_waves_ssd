@@ -570,9 +570,9 @@ Results from bayesian analysis to jointly estimate the serial interval and repro
 
 ```{r fs5, message=FALSE, echo=FALSE,warning=FALSE, fig.width = 10, fig.height= 10}
 
-#see exploreGT.Rmd for original file
+#see main_text.Rmd file for reference
 pdata <- read_csv("data/generated_data/pdata.csv")
-discreteDF<- read_csv("data/generated_data/discreteDF.csv")
+discreteDF<- read_csv("data/generated_data/discreteDF_final.csv")
 
 p0 <- pdata%>% mutate(year=factor(year)) %>%
         ggplot(aes(x=R0,y=meanSI,col=year))+

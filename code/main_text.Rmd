@@ -13,16 +13,19 @@ output:
 knitr::opts_chunk$set(echo = TRUE,message = FALSE,warning = FALSE)
 ```
 
-### Load Libraries and data
-
-```{r load}
+```{r, echo=FALSE}
 source("code/extra/utils.R")
 reload_source()
+
+```
+
+```{r loadLinelist, echo=FALSE}
+
 
 # dat_2014 <- load_and_clean_2014_data() %>% mutate(wave="2014")
 # dat_2015 <- load_and_clean_2015_data()%>% mutate(wave="2015")
 # dat_2017 <- load_and_clean_2017_data()%>% mutate(wave="2016/2017")
-# 
+#
 # master_dat <- bind_rows(dat_2014,dat_2015,dat_2017)
 
 # saveRDS(master_dat,file="data/generated_data/master_linelist_final.rds")
@@ -31,26 +34,16 @@ master_dat <- read_rds("data/generated_data/master_linelist_final.rds")
 missing <- filter(master_dat,is.na(onset_date_imp)|is.na(admin2Name)) %>%
               select(wave,onset_date_imp,admin2Name)
 
-
-```
-
-## Abstract
-
-```{r abstract}
-
-table(master_dat$wave)
-
-#see results for comparison of attack rates and statistics on vaccination campaigns
-
-```
-
-
-## Methods 
-
-```{r iomdata}
-
-#districts used for iom data
+#load shapefile
 my_map <- read_sf("data/raw_data/ssd_admbnda_adm2_200k_ssnbs_20160114.shp") 
+
+#bring in population data
+worldpop_dat <- read_csv("data/raw_data/SSD15adjv3_tif+SSD-HDX-Borders_adm2_zonal.csv")
+
+```
+
+
+```{r loadiomdata, echo=FALSE}
 
 #get iom dataset ready
 final_iomdata <- read_csv("data/generated_data/IOM_longdata.csv") %>%
@@ -90,6 +83,53 @@ final_iomdata <- final_iomdata %>%
         summarize(count=sum(count))  %>% ungroup(period)%>%
         filter(period!="2018JanApr" & count !=0)
 
+```
+
+
+```{r loadOCVdata, echo=FALSE}
+
+#bring in ocv data
+raw_ocv_dat <- read_xlsx("data/raw_data/ocv_summary_south_sudan.xlsx",na = c("","?"))  %>%
+        rename(admin2Name = County,doses_r1 = `Doses administered 1st round`) %>%
+        mutate(date_r1 = as.Date(`Start\r\n1st round`,origin="1970-1-1"))%>%
+        mutate(doses_r2=as.numeric(`Doses administered 2nd round`))%>%
+        #calculate coverage
+        left_join(worldpop_dat %>% select(admin2Name,SUM)) %>%
+        mutate(r1_coverage = doses_r1/SUM)
+
+
+
+```
+
+```{r loadRainfall, echo=FALSE}
+
+chrps_rainfall_2010_2018 <- read_csv("data/raw_data/ssd_chrps_county/chrps_counties_dailyrainfall_2010_2018.csv")
+
+```
+
+```{r loadMLVA, echo=FALSE}
+mlva_resistance <- read_csv("data/raw_data/mlva_resistance_mlq.csv") %>%
+  rename(sampleID = `N?CNRVC`)
+
+```
+
+
+## Abstract
+
+```{r abstract}
+
+table(master_dat$wave)
+
+#see results for comparison of attack rates and statistics on vaccination campaigns
+
+```
+
+
+## Methods 
+
+### IOM data
+
+```{r iomdata}
 
 #counties in the iom dataset
 iom_counties <- unique(final_iomdata$assess)
@@ -112,6 +152,99 @@ cholera_counties %>% summarise(
 
 
 ```
+
+### Serial Interval
+
+```{r serialinterval-mcmc}
+
+#load previously run fits
+fit2014<- read_rds("data/generated_data/fit2014.rds")
+fit2015<- read_rds("data/generated_data/fit2015.rds")
+fit2016<- read_rds("data/generated_data/fit2016.rds")
+
+# to run the full stan code
+# source("code/extra/run_stan_SImodel.R")
+
+getDraws <- function(fitting,iter,warmup,chains){
+    
+    df <- data.frame()
+
+    for (j in 1:chains){
+
+        #turn list into data.frame
+        newChain <-as.data.frame(fitting@sim$samples[[j]])
+        #remove warm-up samples
+        newChain<- newChain[(warmup+1):iter,]
+        #append new chain to previous ones
+        df <- bind_rows(df,newChain)
+    }
+    return(df)
+    
+}
+
+#organize MCMC data into dataframe
+draws2014 <- getDraws(fit2014,iter=5000,warmup=1000,chains=4)
+draws2015 <- getDraws(fit2015,iter=100000,warmup=1000,chains=4) #note the larger number of iterations chosen
+draws2016 <- getDraws(fit2016,iter=5000,warmup=1000,chains=4)
+
+# thin due to autocorrelation of MCMC
+final2014 <- draws2014[seq(1,nrow(draws2014),10),] %>%
+                mutate(year=2014)
+final2015 <- draws2015[seq(1,nrow(draws2015),10),]%>%
+                mutate(year=2015)
+final2016 <- draws2016[seq(1,nrow(draws2016),10),]%>%
+                mutate(year=2016)
+
+#bring together in one dataset
+pdata<- bind_rows(final2014,final2015,final2016) %>%
+        mutate(meanSI=shape*scale,
+               R0=exp(logR),
+               year=factor(year)
+               ) 
+
+
+
+set.seed(234)
+
+#create a table for mean and SD
+meanSD<- pdata %>%        mutate(GT=rgamma(1:nrow(.),shape=shape,scale=scale))  %>%
+    group_by(year) %>% summarize(mean=mean(GT),sd=sd(GT))
+
+meanSD
+
+```
+
+
+```{r serialinterval-gendata, echo=FALSE}
+
+# #save the draws for plots
+# write_csv(pdata,"data/generated_data/pdata_final.csv")
+# 
+# #original phelps estimates
+# mean_si<- 3.7 #phelps estimate is 3.7 (2.9-4.7)
+# sd_si <- 2.2
+# 
+# #generate discrete SI distributions for dlnm model
+# discreteDF <- data.frame(days=0:10) %>%
+#         mutate(
+#                `2015`=EpiEstim::discr_si(days, as.numeric(meanSD[2,2]),
+#                                  as.numeric(meanSD[2,3])),
+#                `2016`=EpiEstim::discr_si(days, as.numeric(meanSD[3,2]),
+#                                  as.numeric(meanSD[3,3])),
+#                Phelps=EpiEstim::discr_si(days, mean_si, sd_si)
+#                ) %>%
+#         mutate(
+#                `2015`=`2015`/sum(`2015`),
+#                `2016`=`2016`/sum(`2016`),
+#                Phelps=Phelps/sum(Phelps)
+#                ) %>%
+#         gather(Estimate,value,-days)
+# 
+# write_csv(discreteDF,"data/generated_data/discreteDF_final.csv")
+
+
+```
+
 
 ## Results
 
@@ -204,18 +337,15 @@ ayod %>%        summarize(count=n(),
 ayod %>% group_by(isoweek(onset_date_imp)) %>%
           mutate( week = floor_date(onset_date_imp - 1, "weeks") + 1) %>%
           summarize(count=n())
-# 1595+1284+397
+
+
+1595+1284+397
 
 ```
 
 ### Vaccination Campaigns
 
-```{r vaccination}
-
-
-
-#bring in weekly cases and pop
-worldpop_dat <- read_csv("data/raw_data/SSD15adjv3_tif+SSD-HDX-Borders_adm2_zonal.csv")
+```{r vaccination1}
 
 # calculate the first week and last case for each wave
 first <- master_dat %>% group_by(admin2Name,wave)%>%
@@ -225,6 +355,7 @@ last <- master_dat %>%
         group_by(admin2Name,wave) %>%
         summarize(ldate=max(onset_date_imp,na.rm = TRUE))
 
+#put the number of cases at a weekly level to determine the peak week
 masterfinal <- master_dat %>% 
         mutate( week = floor_date(onset_date_imp - 1, "weeks") + 1) %>%
         group_by(wave,week, admin2Name) %>%
@@ -239,43 +370,35 @@ peak <- masterfinal %>%
         rename(peakWk=week) %>%
         group_by(admin2Name,wave) %>%
         summarize(peakWk=mean(peakWk),
-                   cases=mean(cases))
-
-#bring in ocv data
-ocv_dat <- read_xlsx("data/raw_data/ocv_summary_south_sudan.xlsx",na = c("","?"))  %>%
-        rename(admin2Name = County,doses_r1 = `Doses administered 1st round`) %>%
-        mutate(date_r1 = as.Date(`Start\r\n1st round`,origin="1970-1-1"))%>%
-        mutate(doses_r2=as.numeric(`Doses administered 2nd round`))%>%
-        #calculate coverage
-        left_join(worldpop_dat %>% select(admin2Name,SUM)) %>%
-        mutate(r1_coverage = doses_r1/SUM)
-
+                   cases=mean(cases)) %>%
+        mutate(
+                  peakWkStart=peakWk,
+                  peakWkEnd=peakWkStart+6
+                  )
 
 #########PARAGRAPH: In addition to case management, surveillance, and WASH intervention.....
 
 # Total doses
-sum(ocv_dat$doses_r1) +sum(ocv_dat$doses_r2,na.rm = TRUE)
+sum(raw_ocv_dat$doses_r1) +sum(raw_ocv_dat$doses_r2,na.rm = TRUE)
 # of campaigns
-nrow(ocv_dat)
-table(ocv_dat$Year,useNA = "always")
+nrow(raw_ocv_dat)
+table(raw_ocv_dat$Year,useNA = "always")
 #of cholera counties with campaigns
-table(cholera_counties$admin2Name %in% unique(ocv_dat$admin2Name) )
-sum(ocv_dat$admin2Name=="Juba")
+table(cholera_counties$admin2Name %in% unique(raw_ocv_dat$admin2Name) )
+sum(raw_ocv_dat$admin2Name=="Juba")
 #range of doses reached
-summary(ocv_dat$doses_r1)
+summary(raw_ocv_dat$doses_r1)
 #administrative coverage (copy and paste into console)
-summary(ocv_dat$`Admin coverage \r\n1st round`)
+summary(raw_ocv_dat$`Admin coverage \r\n1st round`)
 #county level coverage
-summary(ocv_dat$r1_coverage)
+summary(raw_ocv_dat$r1_coverage)
 
 
+```
 
-
-
-#########
-
+```{r vaccination2}
 #prep OCV data for additional calculations
-ocv_dat <- ocv_dat%>% 
+ocv_dat <- raw_ocv_dat%>% 
         #assign waves to each campaign
         # select(No.,admin2Name,date_r1,r1_coverage) %>%
         filter(!is.na(date_r1)) %>%
@@ -294,7 +417,26 @@ ocv_dat <- ocv_dat%>%
                              "Juba",
                              "Other Counties"))  %>%
         #match with first case
-        left_join(first,by=c("admin2Name","wave"))
+        left_join(first,by=c("admin2Name","wave")) %>%
+        #timing declarations
+        mutate(
+              #reactive vs. non reactive
+              campaignTiming1 = ifelse(date_r1>=fdate,"Reactive","Preemptive"),
+              #before during or after peak
+              campaignTiming2 = ifelse(date_r1>=peakWkStart,"During or After Peak","Before Peak"),
+              campaignTiming3 = ifelse(date_r1>=peakWkStart & date_r1<=peakWkEnd,
+                                       "During Peak",campaignTiming2),
+              campaignTiming3 = ifelse(date_r1>peakWkEnd,
+                                       "After Peak",campaignTiming3),
+              #before or after the last case
+              campaignTiming4 = ifelse(date_r1>ldate,
+                                       "After Cases Disappeared",
+                                       "Before Cases Disappeared"
+                                       )
+
+
+
+        )
 
 
 
@@ -306,11 +448,15 @@ ocv_dat <- ocv_dat%>%
 reactive <- ocv_dat %>% filter(date_r1>=fdate)
 #campaigns in areas with cholera cases
 nrow(reactive)
-filter(reactive,TTP<=6)
-sum(reactive$TTP<=6,na.rm = TRUE)
+# filter(reactive,TTP<=6)
+# sum(reactive$TTP<=6,na.rm = TRUE)
+table(reactive$campaignTiming3,reactive$wave)
+
 #assess how many campaigns occurred before the peak
-table(reactive$wave,reactive$TTP<=6)
-table(ocv_dat$TTP<0) #for the abstract
+# table(reactive$wave,reactive$TTP<=6)
+table(reactive$campaignTiming3,reactive$wave)
+# table(ocv_dat$TTP<0) #for the abstract
+table(ocv_dat$campaignTiming3,useNA = "always") #for the abstract
 
 # assess how many campaigns occurred after the last case
 # table(reactive$wave,reactive$TTL>0)
@@ -357,22 +503,30 @@ ardf2 %>% group_by(BeforePeak) %>%
           mutate(first(AR)/AR)
 
 #graphic
-ardf2 %>% ggplot(aes(x=BeforePeak,y=ARpercent,col=admin2Name=="Juba"))+
+ardf2 %>%  mutate(campaignTiming2=ifelse(is.na(campaignTiming2),
+                                    "No campaign",campaignTiming2))%>%
+        ggplot(aes(x=campaignTiming2,y=ARpercent,col=admin2Name=="Juba"))+
         geom_jitter(height=0,alpha=0.7)+
         scale_y_continuous(trans="log10")+xlab("Timing")+
         ylab("AR (%)")
 
+
 #fit 1: Compare before and after peak (include peak week as after)
-fit1 <-ardf2 %>% 
-        glm(data=., cases ~BeforePeak +offset(log(SUM)),family=poisson)
-exp(-fit1$coefficients)
-exp(-confint(fit1))
+fit <-ardf2 %>% 
+      mutate(campaignTiming2=ifelse(is.na(campaignTiming2),
+                                    "No campaign",campaignTiming2)) %>%
+        glm(data=., cases ~campaignTiming2 +offset(log(SUM)),family=poisson)
+exp(fit$coefficients)
+exp(confint(fit))
+
 
 #fit 2: Compare before and after peak controlling for coverage and wave
 fit2 <-ardf2 %>% 
-        glm(data=., cases ~BeforePeak +r1_coverage + wave+offset(log(SUM)),family=poisson)
-exp(-fit2$coefficients)
-exp(-confint(fit2))
+      mutate(campaignTiming2=ifelse(is.na(campaignTiming2),
+                                    "No campaign",campaignTiming2)) %>%
+        glm(data=., cases ~campaignTiming2 +r1_coverage + wave+offset(log(SUM)),family=poisson)
+exp(fit2$coefficients)
+exp(confint(fit2))
 
 #fit 3: Compare before and after peak (include peak week as before)
 ardf3 <- ardf %>% left_join(ocv_dat2) %>%
@@ -384,56 +538,12 @@ fit3 <-ardf3 %>%
 exp(-fit3$coefficients)
 exp(-confint(fit3))
 
-
-####OLD CODE
-# #limit analysis to campaigns with AR, date and has the highest coverage
-# ocv_dat2<- ocv_dat %>%
-#         group_by(admin2Name,wave) %>% #summarize(TTP=min(TTP)) %>%
-#         filter(r1_coverage==max(r1_coverage))%>%
-#         filter(!is.na(TTP))
-# 
-# ardf <- master_dat %>%  group_by(wave, admin2Name) %>%
-#                         summarize(cases=n()) %>%
-#                         filter(!(is.na(admin2Name)))%>%
-#         left_join(select(worldpop_dat,admin2Name,SUM))%>%
-#         mutate(ARpercent=cases/SUM*100)
-# 
-# 
-# 
-# ardf2 <- ardf %>% left_join(ocv_dat2) %>%
-#         mutate(BeforePeak=ifelse(TTP<0,"Before Peak","After Peak"),
-#                BeforePeak=ifelse(is.na(TTP),"No Campaign",BeforePeak))
-# 
-# 
-# ardf2 %>% ggplot(aes(x=BeforePeak,y=ARpercent,col=admin2Name=="Juba"))+
-#         geom_jitter(height=0)+
-#         scale_y_continuous(trans="log10")+xlab("Timing")+
-#         ylab("AR (%)")
-# 
-# fit1 <-ardf2 %>% #filter(admin2Name!="Juba") %>%
-#         glm(data=., cases ~BeforePeak + offset(log(SUM)),family=poisson)
-# 
-# 
-# exp(-fit1$coefficients)
-# exp(-confint(fit1))
-# 
-# fit2 <-ardf2 %>% #filter(admin2Name!="Juba") %>%
-#         glm(data=., cases ~BeforePeak +r1_coverage + wave+ offset(log(SUM)),family=poisson)
-# 
-# exp(-fit2$coefficients)
-# exp(-confint(fit2))
-
-
-
-
 ```
 
 
 ### The Role of Precipitation
 
 ```{r precipitation}
-
-chrps_rainfall_2010_2018 <- read_csv("data/raw_data/ssd_chrps_county/chrps_counties_dailyrainfall_2010_2018.csv")
 
 mapdf <- as.data.frame(read_sf("data/raw_data/ssd_admbnda_adm2_200k_ssnbs_20160114.shp")) %>%
         select(admin2Name,admin2Pcod)
@@ -462,9 +572,6 @@ rainfall_daily %>%
 ### MLVA
 
 ```{r}
-
-mlva_resistance <- read_csv("data/raw_data/mlva_resistance_mlq.csv") %>%
-  rename(sampleID = `N?CNRVC`)
 
 #MLVA dataframe
 mlva_ssd <- mlva_resistance %>%
@@ -526,9 +633,8 @@ final_iomdata %>% filter(origin=="Juba") %>%
 
 
 sum(reactive$doses_r1+reactive$doses_r2,na.rm = TRUE)
-reactive %>% filter(TTP<0)%>%
+reactive %>% filter(campaignTiming3 %in% c("Before Peak","During Peak"))%>%
         summarize(sum(doses_r1+doses_r2,na.rm = TRUE))
-
 
 round(100*73882 / 1805452,1)
 
