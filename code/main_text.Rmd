@@ -81,7 +81,9 @@ final_iomdata <- final_iomdata %>%
         select(period,origin, assess,count,countryOrigin, admin2Pcod) %>% 
         group_by(period,origin, assess,countryOrigin,admin2Pcod) %>%
         summarize(count=sum(count))  %>% ungroup(period)%>%
-        filter(period!="2018JanApr" & count !=0)
+        filter(period!="2018JanApr" & count !=0)%>%
+        filter(origin!=assess) %>%
+        filter(origin != "Other (Specify)")
 
 ```
 
@@ -159,7 +161,7 @@ cholera_counties %>% summarise(
 
 #load previously run fits
 fit2014<- read_rds("data/generated_data/fit2014.rds")
-fit2015<- read_rds("data/generated_data/fit2015.rds")
+fit2015<- read_rds("data/generated_data/fit2015long.rds")
 fit2016<- read_rds("data/generated_data/fit2016.rds")
 
 # to run the full stan code
@@ -202,13 +204,24 @@ pdata<- bind_rows(final2014,final2015,final2016) %>%
                year=factor(year)
                ) 
 
+#calculate mean and variances
+meanSD<- pdata %>%        mutate(meanGT=shape*scale,
+                                 varGT= shape*(scale^2)
+                                 ) %>% 
+                          mutate(sdGT=sqrt(varGT))
+
+p1 <- meanSD %>% ggplot(aes(x=meanGT,col=year))+ geom_density()
+p2 <- meanSD %>% ggplot(aes(x=sdGT,col=year))+ geom_density()
+
+plot_grid(p1,p2)
 
 
-set.seed(234)
+meanSD <-meanSD%>% 
+    group_by(year) %>% summarize( mean=mean(meanGT),
+                                  sd=median(sdGT),
+                                  var=median(varGT)
 
-#create a table for mean and SD
-meanSD<- pdata %>%        mutate(GT=rgamma(1:nrow(.),shape=shape,scale=scale))  %>%
-    group_by(year) %>% summarize(mean=mean(GT),sd=sd(GT))
+                                 ) 
 
 meanSD
 
@@ -218,7 +231,7 @@ meanSD
 ```{r serialinterval-gendata, echo=FALSE}
 
 # #save the draws for plots
-# write_csv(pdata,"data/generated_data/pdata_final.csv")
+# # write_csv(pdata,"data/generated_data/pdata_final.csv")
 # 
 # #original phelps estimates
 # mean_si<- 3.7 #phelps estimate is 3.7 (2.9-4.7)
@@ -240,7 +253,7 @@ meanSD
 #                ) %>%
 #         gather(Estimate,value,-days)
 # 
-# write_csv(discreteDF,"data/generated_data/discreteDF_final.csv")
+# # write_csv(discreteDF,"data/generated_data/discreteDF_final.csv")
 
 
 ```
@@ -616,13 +629,20 @@ distinct(mlva_ssd,sampleID,year) %>% group_by(year) %>%
 
 ```{r displacement}
 
+final_iomdata %>%   ungroup() %>%    
+          summarize(count=sum(count))
+
+final_iomdata %>%   group_by(period)%>%    
+          summarize(count=sum(count))
+
+final_iomdata %>%   group_by(countryOrigin)%>%    
+          summarize(count=sum(count))
+
 final_iomdata %>% filter(origin=="Juba") %>%
         group_by(period) %>%
         summarize(count=sum(count))
 
-(7234-4217)/7234
-
-
+(7234-2458)/7234
 
 ```
 

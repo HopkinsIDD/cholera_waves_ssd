@@ -79,7 +79,7 @@ iter <- 5000
 fit2014 <- sampling(ret_sm, warmup=warmup, iter=iter,
                     seed=123, data=stan_dat_2014, chains=4,
                     control=list(adapt_delta=.95))
-fit2015 <- sampling(ret_sm, warmup=warmup, iter=100000,
+fit2015 <- sampling(ret_sm, warmup=warmup, iter=10000000,
                     seed=123, data=stan_dat_2015, chains=4,
                     control=list(adapt_delta=.95))
 fit2016 <- sampling(ret_sm, warmup=warmup, iter=iter,
